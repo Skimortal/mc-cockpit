@@ -19,7 +19,7 @@ final class ImapPoller
     /**
      * @return ParsedMessage[]
      */
-    public function poll(Mailbox $mailbox, int $limit = 50): array
+    public function poll(Mailbox $mailbox, int $limit = 50, int $sinceDays = 14): array
     {
         $cm = new ClientManager();
         $client = $cm->make([
@@ -34,13 +34,20 @@ final class ImapPoller
         $client->connect();
 
         $folder = $client->getFolder('INBOX');
-        $messages = $folder->query()->unseen()->limit($limit)->setFetchOrder('asc')->get();
+        // Zeitfenster statt "unseen": robust gegen Seen-Flags anderer Clients (z. B. FreeScout).
+        // Doppelte werden später über die Message-ID herausgefiltert (Idempotenz).
+        $since = \Carbon\Carbon::now()->subDays($sinceDays);
+        $messages = $folder->query()
+            ->since($since)
+            ->limit($limit)
+            ->setFetchOrder('asc')
+            ->leaveUnread() // markiert nichts als gelesen (stört FreeScout im Übergang nicht)
+            ->get();
 
         $result = [];
         foreach ($messages as $message) {
             try {
                 $result[] = $this->parse($message);
-                $message->setFlag('Seen');
             } catch (\Throwable $e) {
                 $this->logger->error('IMAP parse failed', ['mailbox' => $mailbox->email, 'error' => $e->getMessage()]);
             }
