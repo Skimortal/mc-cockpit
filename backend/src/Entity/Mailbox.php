@@ -1,0 +1,51 @@
+<?php
+
+namespace App\Entity;
+
+use ApiPlatform\Metadata\ApiResource;
+use Doctrine\ORM\Mapping as ORM;
+
+/** Konfiguration eines Postfachs (IMAP-Abruf + SMTP-Versand). */
+#[ORM\Entity]
+#[ApiResource]
+class Mailbox
+{
+    #[ORM\Id, ORM\GeneratedValue, ORM\Column]
+    public ?int $id = null;
+
+    #[ORM\Column(length: 100)]
+    public string $name = '';
+
+    #[ORM\Column(length: 180)]
+    public string $email = '';
+
+    #[ORM\Column(length: 180)]
+    public string $imapHost = '';
+
+    #[ORM\Column]
+    public int $imapPort = 993;
+
+    /** ssl|tls|none */
+    #[ORM\Column(length: 10)]
+    public string $imapEncryption = 'ssl';
+
+    #[ORM\Column(length: 180)]
+    public string $smtpHost = '';
+
+    #[ORM\Column]
+    public int $smtpPort = 587;
+
+    /** tls|ssl|none */
+    #[ORM\Column(length: 10)]
+    public string $smtpEncryption = 'tls';
+
+    #[ORM\Column(length: 180)]
+    public string $username = '';
+
+    /** Postfach-Passwort (nur serverseitig; nicht über die API ausliefern – später verschlüsseln). */
+    #[ORM\Column(length: 255)]
+    public string $password = '';
+
+    #[ORM\Column]
+    public bool $active = true;
+}
