@@ -1,0 +1,29 @@
+# Secrets / lokale Env
+**/.env.local
+**/.env.*.local
+*.pem
+*.key
+backend/config/jwt/
+
+# Abhängigkeiten / Build
+/backend/vendor/
+/frontend/node_modules/
+/frontend/dist/
+
+# Symfony var
+/backend/var/
+
+# Logs / Temp / OS
+*.log
+.DS_Store
+*~
+*.swp
+
+# IDE / Tooling
+.idea/
+.vscode/
+.claude
+
+# Docker lokale env
+docker-dev/.env
+docker-prod/.env
