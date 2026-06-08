@@ -49,6 +49,10 @@ class Email
     #[ORM\Column(type: 'datetime_immutable')]
     public \DateTimeImmutable $occurredAt;
 
+    /** Zeitpunkt der KI-Triage (null = noch nicht verarbeitet). */
+    #[ORM\Column(type: 'datetime_immutable', nullable: true)]
+    public ?\DateTimeImmutable $triagedAt = null;
+
     public function __construct()
     {
         $this->occurredAt = new \DateTimeImmutable();

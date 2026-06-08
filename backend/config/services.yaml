@@ -19,5 +19,8 @@ services:
     App\:
         resource: '../src/'
 
+    # LLM-Anbieter: Standard ist Claude
+    App\Service\Llm\LlmClient: '@App\Service\Llm\ClaudeClient'
+
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones

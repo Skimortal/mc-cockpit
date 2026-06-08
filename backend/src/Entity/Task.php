@@ -43,6 +43,18 @@ class Task
     #[ORM\ManyToOne(targetEntity: Conversation::class)]
     public ?Conversation $conversation = null;
 
+    /** Auslösende E-Mail (für „Antwort aus der Aufgabe"). */
+    #[ORM\ManyToOne(targetEntity: Email::class)]
+    public ?Email $sourceEmail = null;
+
+    /** Von der KI vorgeschlagener Zuständiger (Freitext, bevor zugewiesen wird). */
+    #[ORM\Column(length: 100, nullable: true)]
+    public ?string $suggestedAssignee = null;
+
+    /** KI-Kurzzusammenfassung der Mail. */
+    #[ORM\Column(type: 'text', nullable: true)]
+    public ?string $aiSummary = null;
+
     #[ORM\Column(type: 'text', nullable: true)]
     public ?string $description = null;
 
