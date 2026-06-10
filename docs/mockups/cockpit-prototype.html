@@ -38,10 +38,15 @@ let UID = 100;
 
 const state = {
   selConv: null, group:'person', query:'', replyText:'', commentText:'', showDone:false,
-  inboxFilter:'alle',
+  inboxFilter:'alle', openMsgs:new Set(),
   convs: [
     { id:1, from:'Hofer SI · J. Janušič', email:'bpet@hofer.si', subj:'Mehraufwand-Verrechnung PO 4529979330', time:'09:14', unread:false, state:'aufgabe', taskId:11,
-      thread:[{dir:'in',who:'J. Janušič (Hofer SI)',time:'09:14',body:'Sehr geehrte Damen und Herren,\nfür PO 4529979330 müssen wir einen Mehraufwand von EUR 25 verrechnen (manuelle ASN-Erfassung). Bitte um Kenntnisnahme.'}]},
+      thread:[
+        {dir:'in',who:'J. Janušič (Hofer SI)',time:'Mo 11:20',body:'Sehr geehrte Damen und Herren,\nfür PO 4529979330 müssen wir einen Mehraufwand von EUR 25 verrechnen (manuelle ASN-Erfassung). Bitte um Kenntnisnahme.'},
+        {dir:'out',who:'Wir',time:'Mo 15:42',body:'Sehr geehrter Herr Janušič,\nbei dieser PO lag ein Manhattan-Systemfehler vor – die ASN konnte nicht automatisch erzeugt werden. Wir holen die Bestätigung von Frau Wittmann (HOFER-Lager Lukovica) ein.\n\nMit freundlichen Grüßen\nMOST Connect KG'},
+        {dir:'in',who:'J. Janušič (Hofer SI)',time:'Di 08:05',body:'Danke für die Rückmeldung. Wir benötigen die schriftliche Bestätigung von Frau Wittmann, sonst bleibt die Verrechnung bestehen.'},
+        {dir:'in',who:'J. Janušič (Hofer SI)',time:'09:14',body:'Ergänzung: Bitte bis Ende der Woche, danach wird der Betrag automatisch verbucht.'}
+      ]},
     { id:2, from:'Aldi Süd · Stockmann', email:'stockmann@aldi-sued.de', subj:'Adresse und Kontaktdaten Tray (Etikett)', time:'08:02', unread:true, state:'neu', taskId:null,
       thread:[{dir:'in',who:'F. Stockmann (Aldi Süd)',time:'08:02',body:'Hallo,\nbitte das Tray-Etikett für Aldi Süd DE anpassen: neue Adresse + Kontaktdaten. Wir brauchen die finale Version bis 12.08.'}]},
     { id:3, from:'Hofer · QM-Abteilung', email:'qm@hofer.at', subj:'Notification of Required QM Inspection — 700000060858', time:'Mo', unread:true, state:'neu', taskId:null,
@@ -85,7 +90,9 @@ function toast(msg){const el=document.getElementById('toast');el.innerHTML=`<div
 
 // ---------------- ACTIONS ----------------
 const A = {
-  selConv(id){state.selConv=+id;state.replyText='';state.commentText='';const c=state.convs.find(x=>x.id===+id);if(c)c.unread=false;render();},
+  selConv(id){state.selConv=+id;state.replyText='';state.commentText='';const c=state.convs.find(x=>x.id===+id);if(c){c.unread=false;state.openMsgs=new Set([c.thread.length-1]);}render();},
+  toggleMsg(i){i=+i;state.openMsgs.has(i)?state.openMsgs.delete(i):state.openMsgs.add(i);render();},
+  allMsgs(){const c=state.convs.find(x=>x.id===state.selConv);if(!c)return;state.openMsgs=(state.openMsgs.size>=c.thread.length)?new Set([c.thread.length-1]):new Set(c.thread.map((_,i)=>i));render();},
   close(){state.selConv=null;render();},
   filter(f){state.inboxFilter=f;render();},
   group(g){state.group=g;render();},
@@ -105,7 +112,7 @@ const A = {
   toggleTag(tag){const c=state.convs.find(x=>x.id===state.selConv);const t=taskOf(c);if(!t)return;const i=t.tags.indexOf(tag);i>=0?t.tags.splice(i,1):t.tags.push(tag);render();},
   addComment(){const c=state.convs.find(x=>x.id===state.selConv);const t=taskOf(c);if(!t||!state.commentText.trim())return;t.comments.push({who:'Aleksandar',time:'jetzt',text:state.commentText.trim()});state.commentText='';render();},
   draft(){const c=state.convs.find(x=>x.id===state.selConv);state.replyText=AIDRAFT[c.id]||'';render();},
-  send(){const c=state.convs.find(x=>x.id===state.selConv);if(!state.replyText.trim())return;c.thread.push({dir:'out',who:'Wir',time:'jetzt',body:state.replyText.trim()});const t=taskOf(c);if(t&&t.status==='open')t.status='waiting';state.replyText='';toast('✉ Gesendet an '+c.email);render();},
+  send(){const c=state.convs.find(x=>x.id===state.selConv);if(!state.replyText.trim())return;c.thread.push({dir:'out',who:'Wir',time:'jetzt',body:state.replyText.trim()});state.openMsgs.add(c.thread.length-1);const t=taskOf(c);if(t&&t.status==='open')t.status='waiting';state.replyText='';toast('✉ Gesendet an '+c.email);render();},
   simulate(){
     const m=NEWMAILS[newMailIdx%NEWMAILS.length];newMailIdx++;
     const cid=++UID;const tid=++UID;
@@ -182,13 +189,30 @@ function boardHTML(){
       <div class="space-y-2 min-h-[64px]">${g.items.map(cardHTML).join('')||'<div class="text-[11px] text-neutral-300 px-1 py-5 text-center border-2 border-dashed border-[#e6dad6] rounded-lg">hierher ziehen</div>'}</div>
     </div>`).join('')}</div>`;
 }
+function threadHTML(c){
+  return c.thread.map((m,i)=>{
+    const open=state.openMsgs.has(i), out=m.dir==='out';
+    const initials = out ? '✓' : (m.who.replace(/[^A-Za-zÄÖÜäöü ]/g,'').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase()||'?');
+    const to = out ? c.email : 'support@hdv-stojakovic.at';
+    const preview = esc(m.body).replace(/<br>/g,' ').slice(0,90);
+    return `<div class="border ${out?'border-coral/30':'border-[#e6dad6]'} rounded-lg mb-2 overflow-hidden">
+      <div data-action="toggleMsg" data-id="${i}" class="flex items-center gap-2 px-3 py-2 cursor-pointer ${out?'bg-coral/5':'bg-beige-soft'} hover:brightness-95">
+        <span class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold shrink-0 ${out?'bg-coral text-white':'bg-navy text-white'}">${initials}</span>
+        <div class="min-w-0 flex-1">
+          <div class="text-[12px] font-semibold ${out?'text-coral':'text-navy'} leading-tight">${out?'Wir':m.who}</div>
+          ${open?`<div class="text-[10px] text-neutral-400">an: ${to}</div>`:`<div class="text-[11px] text-neutral-400 truncate">${preview}</div>`}
+        </div>
+        <span class="text-[10px] text-neutral-400 shrink-0">${m.time}</span>
+        <span class="text-neutral-300 text-[10px] shrink-0">${open?'▾':'▸'}</span>
+      </div>
+      ${open?`<div class="px-3 py-2.5 text-[12.5px] text-neutral-700 leading-relaxed border-t ${out?'border-coral/20':'border-[#efe4df]'}">${esc(m.body)}</div>`:''}
+    </div>`;
+  }).join('');
+}
 function detailHTML(){
   const c=state.convs.find(x=>x.id===state.selConv);
   if(!c)return `<div class="h-full flex items-center justify-center text-center text-neutral-400 text-sm px-6">Wähle links eine Konversation<br>oder rechts eine Aufgabe.</div>`;
   const t=taskOf(c);
-  const thread=c.thread.map(m=>`<div class="mb-2">
-    <div class="text-[11px] ${m.dir==='out'?'text-coral':'text-navy'} font-medium">${m.who} · ${m.time}</div>
-    <div class="text-[12px] text-neutral-600 leading-relaxed">${esc(m.body)}</div></div>`).join('');
   let taskBlock;
   if(t){
     taskBlock=`
@@ -230,8 +254,11 @@ function detailHTML(){
       <button data-action="close" class="ml-auto text-neutral-400 text-xl leading-none">×</button>
     </div>
     <div class="px-4 py-3 overflow-y-auto flex-1">
-      <div class="text-[10px] uppercase tracking-wide text-neutral-400 mb-1">Verlauf (${c.thread.length})</div>
-      ${thread}
+      <div class="flex items-center justify-between mb-1.5">
+        <span class="text-[10px] uppercase tracking-wide text-neutral-400">Konversation · ${c.thread.length} Nachricht(en)</span>
+        ${c.thread.length>1?`<button data-action="allMsgs" class="text-[10px] text-navy hover:text-coral">${state.openMsgs.size>=c.thread.length?'alle zuklappen':'alle aufklappen'}</button>`:''}
+      </div>
+      ${threadHTML(c)}
       ${taskBlock}
     </div>
     <div class="px-4 py-3 border-t border-[#e6dad6] bg-beige-soft">
@@ -288,6 +315,7 @@ document.addEventListener('click',e=>{const el=e.target.closest('[data-action]')
   else if(a==='status')A.status(id); else if(a==='tag')A.toggleTag(id); else if(a==='addComment')A.addComment();
   else if(a==='draft')A.draft(); else if(a==='send')A.send(); else if(a==='simulate')A.simulate();
   else if(a==='quickDone')A.quickDone(id);
+  else if(a==='toggleMsg')A.toggleMsg(id); else if(a==='allMsgs')A.allMsgs();
 });
 // ---- Drag & Drop (Kanban) ----
 let dragId=null;
