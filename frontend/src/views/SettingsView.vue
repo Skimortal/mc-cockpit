@@ -9,8 +9,11 @@ import { confirmDialog, promptDialog, alertDialog } from '../composables/dialog'
 const auth = useAuth()
 const isAdmin = computed(() => auth.me?.roles?.includes('ROLE_ADMIN') ?? false)
 const tab = ref<'profile' | 'mailboxes' | 'users'>('profile')
-const profileForm = reactive({ firstName: '', lastName: '', email: '', password: '' })
+const profileForm = reactive({ firstName: '', lastName: '', email: '' })
 const profileMsg = ref('')
+const pwForm = reactive({ newPw: '', repeat: '' })
+const showPw = ref(false)
+const pwMsg = ref('')
 
 interface MB { id: number; name: string; email: string; scope: string; owner: { id: number; name: string } | null; imapHost: string; imapPort: number; imapEncryption: string; smtpHost: string; smtpPort: number; smtpEncryption: string; username: string; active: boolean; hasPassword: boolean }
 interface UserRow { id: number; email: string; firstName: string; lastName: string; name: string; isAdmin: boolean }
@@ -64,15 +67,25 @@ async function delUser(u: UserRow) {
 
 async function saveProfile() {
   profileMsg.value = ''
-  const body: Record<string, unknown> = { firstName: profileForm.firstName, lastName: profileForm.lastName, email: profileForm.email }
-  if (profileForm.password) body.password = profileForm.password
   try {
-    const { data } = await api.patch('/api/me', body)
+    const { data } = await api.patch('/api/me', { firstName: profileForm.firstName, lastName: profileForm.lastName, email: profileForm.email })
     auth.me = data
-    profileForm.password = ''
     profileMsg.value = 'Gespeichert.'
   } catch (e: any) {
     profileMsg.value = e?.response?.data?.error ?? 'Fehler beim Speichern.'
+  }
+}
+async function savePassword() {
+  pwMsg.value = ''
+  if (pwForm.newPw.length < 6) { pwMsg.value = 'Mindestens 6 Zeichen.'; return }
+  if (pwForm.newPw !== pwForm.repeat) { pwMsg.value = 'Passwörter stimmen nicht überein.'; return }
+  try {
+    await api.patch('/api/me', { password: pwForm.newPw })
+    pwForm.newPw = ''
+    pwForm.repeat = ''
+    pwMsg.value = 'Passwort geändert.'
+  } catch (e: any) {
+    pwMsg.value = e?.response?.data?.error ?? 'Fehler beim Ändern.'
   }
 }
 async function patchUser(id: number, body: Record<string, unknown>) {
@@ -92,7 +105,7 @@ async function loadUsers() { if (isAdmin.value) users.value = (await api.get('/a
 
 onMounted(async () => {
   if (!auth.me) await auth.fetchMe().catch(() => {})
-  if (auth.me) Object.assign(profileForm, { firstName: auth.me.firstName, lastName: auth.me.lastName, email: auth.me.email, password: '' })
+  if (auth.me) Object.assign(profileForm, { firstName: auth.me.firstName, lastName: auth.me.lastName, email: auth.me.email })
   await loadMailboxes()
   await loadUsers()
 })
@@ -129,10 +142,28 @@ onMounted(async () => {
               <label class="text-[12px] text-neutral-600">Vorname<input v-model="profileForm.firstName" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px] text-ebony mt-0.5" /></label>
               <label class="text-[12px] text-neutral-600">Nachname<input v-model="profileForm.lastName" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px] text-ebony mt-0.5" /></label>
               <label class="text-[12px] text-neutral-600">E-Mail<input v-model="profileForm.email" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px] text-ebony mt-0.5" /></label>
-              <label class="text-[12px] text-neutral-600">Neues Passwort <span class="text-neutral-400">(leer = unverändert)</span><input type="password" v-model="profileForm.password" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px] text-ebony mt-0.5" /></label>
               <div class="flex items-center gap-3 mt-1">
                 <button @click="saveProfile" class="text-[13px] px-3 py-1.5 rounded-lg bg-coral text-white font-medium hover:bg-coral-dark">Speichern</button>
                 <span class="text-[12px]" :class="profileMsg === 'Gespeichert.' ? 'text-green-600' : 'text-neutral-500'">{{ profileMsg }}</span>
+              </div>
+            </div>
+
+            <!-- Passwort ändern -->
+            <div class="bg-white border border-[#e6dad6] rounded-xl p-4 max-w-md grid gap-3 mt-4">
+              <div class="text-[13px] font-semibold text-navy">Passwort ändern</div>
+              <label class="text-[12px] text-neutral-600">Neues Passwort
+                <div class="relative mt-0.5">
+                  <input :type="showPw ? 'text' : 'password'" v-model="pwForm.newPw" autocomplete="new-password" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 pr-9 text-[13px] text-ebony" />
+                  <button type="button" @click="showPw = !showPw" :title="showPw ? 'verbergen' : 'anzeigen'" class="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-navy"><Icon :name="showPw ? 'eye-off' : 'eye'" class="w-4 h-4" /></button>
+                </div>
+              </label>
+              <label class="text-[12px] text-neutral-600">Passwort wiederholen
+                <input :type="showPw ? 'text' : 'password'" v-model="pwForm.repeat" autocomplete="new-password" @keyup.enter="savePassword" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px] text-ebony mt-0.5" />
+              </label>
+              <p v-if="pwForm.newPw && pwForm.repeat && pwForm.newPw !== pwForm.repeat" class="text-[11px] text-red-600 -mt-1">Passwörter stimmen nicht überein.</p>
+              <div class="flex items-center gap-3 mt-1">
+                <button @click="savePassword" :disabled="!pwForm.newPw || !pwForm.repeat" class="text-[13px] px-3 py-1.5 rounded-lg bg-coral text-white font-medium hover:bg-coral-dark disabled:opacity-50">Passwort ändern</button>
+                <span class="text-[12px]" :class="pwMsg === 'Passwort geändert.' ? 'text-green-600' : 'text-red-600'">{{ pwMsg }}</span>
               </div>
             </div>
           </template>
