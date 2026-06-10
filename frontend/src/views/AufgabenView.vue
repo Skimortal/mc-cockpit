@@ -44,6 +44,11 @@ const dragId = ref<number | null>(null)
 
 const selTask = computed(() => tasks.value.find((t) => t.conversationId === selConvId.value) || null)
 
+function fmtDate(s: string): string {
+  // "2026-06-08 14:20" -> "08.06. 14:20"
+  if (!s || s.length < 16) return s
+  return `${s.slice(8, 10)}.${s.slice(5, 7)}. ${s.slice(11, 16)}`
+}
 function badgeStyle(tag: string): string {
   const m: Record<string, string> = {
     Etikett: 'background:#eb5d4f;color:#fff', Labor: 'background:#9d9c87;color:#fff',
@@ -202,7 +207,7 @@ onMounted(async () => {
               :class="selConvId === c.id ? 'border-coral ring-2 ring-coral/30' : 'border-[#e6dad6]'">
               <div class="flex items-center gap-2">
                 <span class="text-[13px] text-navy font-semibold truncate">{{ c.from }}</span>
-                <span class="ml-auto text-[10px] text-neutral-400 shrink-0">{{ c.lastMessageAt.slice(5, 16) }}</span>
+                <span class="ml-auto text-[10px] text-neutral-400 shrink-0">{{ fmtDate(c.lastMessageAt) }}</span>
               </div>
               <div class="text-[12px] text-neutral-600 truncate mt-0.5">{{ c.subject }}</div>
               <div class="mt-1.5 flex items-center gap-1.5 flex-wrap">

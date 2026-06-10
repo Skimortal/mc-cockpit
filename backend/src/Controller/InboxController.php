@@ -50,9 +50,9 @@ class InboxController extends AbstractController
         // optionaler Filter über den Postfach-Switcher
         $filter = $request->query->get('mailbox'); // ID | 'global' | 'mine' | null(=alle)
         $byConv = $this->tasksByConversation();
-        $convs = $this->em->getRepository(Conversation::class)->findBy([], ['createdAt' => 'DESC'], 400);
+        $convs = $this->em->getRepository(Conversation::class)->findBy([], [], 400);
 
-        $out = [];
+        $rows = [];
         foreach ($convs as $c) {
             $mb = $c->mailbox;
             if (!$mb || !\in_array($mb->id, $visibleIds, true)) {
@@ -68,24 +68,32 @@ class InboxController extends AbstractController
                 continue;
             }
 
+            // Effektives Datum = neueste Nachricht im Thread (Fallback lastMessageAt/createdAt).
+            $eff = $c->emails->last() ? $c->emails->last()->occurredAt : ($c->lastMessageAt ?? $c->createdAt);
             $task = $byConv[$c->id] ?? null;
-            $out[] = [
-                'id' => $c->id,
-                'from' => $c->customerName ?: $c->customerEmail,
-                'email' => $c->customerEmail,
-                'subject' => $c->subject,
-                'lastMessageAt' => ($c->lastMessageAt ?? $c->createdAt)->format('Y-m-d H:i'),
-                'messageCount' => $c->emails->count(),
-                'state' => $task ? ('done' === $task->status ? 'erledigt' : 'aufgabe') : 'neu',
-                'taskId' => $task?->id,
-                'owner' => $task?->assignee ? trim($task->assignee->getFirstName().' '.$task->assignee->getLastName()) : null,
-                'mailboxId' => $mb->id,
-                'mailboxName' => $mb->name,
-                'mailboxScope' => $mb->scope,
+            $rows[] = [
+                '_ts' => $eff->getTimestamp(),
+                'data' => [
+                    'id' => $c->id,
+                    'from' => $c->customerName ?: $c->customerEmail,
+                    'email' => $c->customerEmail,
+                    'subject' => $c->subject,
+                    'lastMessageAt' => $eff->format('Y-m-d H:i'),
+                    'messageCount' => $c->emails->count(),
+                    'state' => $task ? ('done' === $task->status ? 'erledigt' : 'aufgabe') : 'neu',
+                    'taskId' => $task?->id,
+                    'owner' => $task?->assignee ? trim($task->assignee->getFirstName().' '.$task->assignee->getLastName()) : null,
+                    'mailboxId' => $mb->id,
+                    'mailboxName' => $mb->name,
+                    'mailboxScope' => $mb->scope,
+                ],
             ];
         }
 
-        return $this->json($out);
+        // Neueste zuerst.
+        usort($rows, fn ($a, $b) => $b['_ts'] <=> $a['_ts']);
+
+        return $this->json(array_map(fn ($r) => $r['data'], $rows));
     }
 
     #[Route('/api/conversations/{id}', methods: ['GET'])]
