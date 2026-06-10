@@ -114,6 +114,63 @@ class CompanyController extends AbstractController
         return $this->json($this->detail($c), 201);
     }
 
+    #[Route('/api/companies/{id}', methods: ['DELETE'])]
+    public function deleteCompany(Company $c): JsonResponse
+    {
+        foreach ($this->em->getRepository(Contact::class)->findBy(['company' => $c]) as $k) {
+            $this->em->remove($k);
+        }
+        foreach ($this->em->getRepository(Document::class)->findBy(['company' => $c]) as $doc) {
+            $this->em->remove($doc);
+        }
+        $this->em->remove($c);
+        $this->em->flush();
+
+        return $this->json(['ok' => true]);
+    }
+
+    #[Route('/api/contacts/{id}', methods: ['PATCH'])]
+    public function updateContact(Contact $k, Request $request): JsonResponse
+    {
+        $d = json_decode($request->getContent(), true) ?: [];
+        if (isset($d['name'])) {
+            $k->firstName = (string) $d['name'];
+            $k->lastName = '';
+        }
+        if (\array_key_exists('department', $d)) {
+            $k->department = $d['department'] ?: null;
+        }
+        if (\array_key_exists('email', $d)) {
+            $k->email = $d['email'] ?: null;
+        }
+        if (\array_key_exists('phone', $d)) {
+            $k->phone = $d['phone'] ?: null;
+        }
+        $this->em->flush();
+
+        return $this->json($this->detail($k->company));
+    }
+
+    #[Route('/api/contacts/{id}', methods: ['DELETE'])]
+    public function deleteContact(Contact $k): JsonResponse
+    {
+        $c = $k->company;
+        $this->em->remove($k);
+        $this->em->flush();
+
+        return $this->json($c ? $this->detail($c) : ['ok' => true]);
+    }
+
+    #[Route('/api/documents/{id}', methods: ['DELETE'])]
+    public function deleteDocument(Document $doc): JsonResponse
+    {
+        $c = $doc->company;
+        $this->em->remove($doc);
+        $this->em->flush();
+
+        return $this->json($c ? $this->detail($c) : ['ok' => true]);
+    }
+
     /** @return array<string,mixed> */
     private function detail(Company $c): array
     {

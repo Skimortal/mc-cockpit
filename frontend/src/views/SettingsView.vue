@@ -7,7 +7,9 @@ import Icon from '../components/Icon.vue'
 
 const auth = useAuth()
 const isAdmin = computed(() => auth.me?.roles?.includes('ROLE_ADMIN') ?? false)
-const tab = ref<'mailboxes' | 'users'>('mailboxes')
+const tab = ref<'profile' | 'mailboxes' | 'users'>('profile')
+const profileForm = reactive({ firstName: '', lastName: '', email: '', password: '' })
+const profileMsg = ref('')
 
 interface MB { id: number; name: string; email: string; scope: string; owner: { id: number; name: string } | null; imapHost: string; imapPort: number; imapEncryption: string; smtpHost: string; smtpPort: number; smtpEncryption: string; username: string; active: boolean; hasPassword: boolean }
 interface UserRow { id: number; email: string; firstName: string; lastName: string; name: string; isAdmin: boolean }
@@ -59,11 +61,35 @@ async function delUser(u: UserRow) {
   await loadUsers()
 }
 
+async function saveProfile() {
+  profileMsg.value = ''
+  const body: Record<string, unknown> = { firstName: profileForm.firstName, lastName: profileForm.lastName, email: profileForm.email }
+  if (profileForm.password) body.password = profileForm.password
+  try {
+    const { data } = await api.patch('/api/me', body)
+    auth.me = data
+    profileForm.password = ''
+    profileMsg.value = 'Gespeichert.'
+  } catch (e: any) {
+    profileMsg.value = e?.response?.data?.error ?? 'Fehler beim Speichern.'
+  }
+}
+async function patchUser(id: number, body: Record<string, unknown>) {
+  try { await api.patch(`/api/users/${id}`, body); await loadUsers() } catch (e: any) { alert(e?.response?.data?.error ?? 'Fehler') }
+}
+function editUser(u: UserRow) {
+  const firstName = prompt('Vorname', u.firstName)
+  if (firstName === null) return
+  const lastName = prompt('Nachname', u.lastName) ?? u.lastName
+  const email = prompt('E-Mail', u.email) ?? u.email
+  patchUser(u.id, { firstName, lastName, email })
+}
 async function loadMailboxes() { mailboxes.value = (await api.get('/api/mailboxes/manage')).data }
 async function loadUsers() { if (isAdmin.value) users.value = (await api.get('/api/users')).data }
 
 onMounted(async () => {
   if (!auth.me) await auth.fetchMe().catch(() => {})
+  if (auth.me) Object.assign(profileForm, { firstName: auth.me.firstName, lastName: auth.me.lastName, email: auth.me.email, password: '' })
   await loadMailboxes()
   await loadUsers()
 })
@@ -76,6 +102,10 @@ onMounted(async () => {
       <!-- Unter-Navigation -->
       <aside class="w-56 shrink-0 bg-beige-soft border-r border-[#e6dad6] p-3">
         <div class="text-[10px] uppercase tracking-wider text-neutral-400 px-2 mb-2">Einstellungen</div>
+        <button @click="tab = 'profile'" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] mb-1 transition"
+          :class="tab === 'profile' ? 'bg-white text-navy font-semibold shadow-sm' : 'text-neutral-500 hover:bg-beige'">
+          <Icon name="users" class="w-4 h-4" /> Mein Profil
+        </button>
         <button @click="tab = 'mailboxes'" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] mb-1 transition"
           :class="tab === 'mailboxes' ? 'bg-white text-navy font-semibold shadow-sm' : 'text-neutral-500 hover:bg-beige'">
           <Icon name="envelope" class="w-4 h-4" /> Postfächer
@@ -89,8 +119,23 @@ onMounted(async () => {
       <!-- Inhalt -->
       <div class="flex-1 overflow-y-auto">
         <div class="max-w-3xl mx-auto px-6 py-6">
+          <!-- MEIN PROFIL -->
+          <template v-if="tab === 'profile'">
+            <h1 class="font-head text-[20px] text-ebony tracking-wide mb-4">Mein Profil</h1>
+            <div class="bg-white border border-[#e6dad6] rounded-xl p-4 max-w-md grid gap-3">
+              <label class="text-[12px] text-neutral-600">Vorname<input v-model="profileForm.firstName" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px] text-ebony mt-0.5" /></label>
+              <label class="text-[12px] text-neutral-600">Nachname<input v-model="profileForm.lastName" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px] text-ebony mt-0.5" /></label>
+              <label class="text-[12px] text-neutral-600">E-Mail<input v-model="profileForm.email" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px] text-ebony mt-0.5" /></label>
+              <label class="text-[12px] text-neutral-600">Neues Passwort <span class="text-neutral-400">(leer = unverändert)</span><input type="password" v-model="profileForm.password" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px] text-ebony mt-0.5" /></label>
+              <div class="flex items-center gap-3 mt-1">
+                <button @click="saveProfile" class="text-[13px] px-3 py-1.5 rounded-lg bg-coral text-white font-medium hover:bg-coral-dark">Speichern</button>
+                <span class="text-[12px]" :class="profileMsg === 'Gespeichert.' ? 'text-green-600' : 'text-neutral-500'">{{ profileMsg }}</span>
+              </div>
+            </div>
+          </template>
+
           <!-- POSTFÄCHER -->
-          <template v-if="tab === 'mailboxes'">
+          <template v-else-if="tab === 'mailboxes'">
             <h1 class="font-head text-[20px] text-ebony tracking-wide mb-4">Postfächer</h1>
 
             <section>
@@ -160,6 +205,7 @@ onMounted(async () => {
                   <div class="text-[11px] text-neutral-500">{{ u.email }}</div>
                 </div>
                 <div class="ml-auto flex gap-2 text-[12px]">
+                  <button @click="editUser(u)" class="text-navy hover:underline">Bearbeiten</button>
                   <button @click="toggleAdmin(u)" class="text-navy hover:underline">{{ u.isAdmin ? 'Admin entziehen' : 'zum Admin' }}</button>
                   <button @click="resetPw(u)" class="text-navy hover:underline">Passwort</button>
                   <button v-if="u.id !== auth.me?.id" @click="delUser(u)" title="Löschen" class="w-7 h-7 grid place-items-center rounded-lg text-neutral-400 hover:bg-red-50 hover:text-red-600"><Icon name="trash" class="w-4 h-4" /></button>

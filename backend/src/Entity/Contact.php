@@ -2,11 +2,9 @@
 
 namespace App\Entity;
 
-use ApiPlatform\Metadata\ApiResource;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
-#[ApiResource]
 class Contact
 {
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]

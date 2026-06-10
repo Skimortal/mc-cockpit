@@ -64,6 +64,12 @@ class UserController extends AbstractController
         if (isset($d['lastName'])) {
             $u->setLastName($d['lastName']);
         }
+        if (isset($d['email']) && $d['email'] !== $u->getEmail()) {
+            if ($this->em->getRepository(User::class)->findOneBy(['email' => $d['email']])) {
+                return $this->json(['error' => 'E-Mail bereits vergeben.'], 409);
+            }
+            $u->setEmail($d['email']);
+        }
         if (\array_key_exists('admin', $d)) {
             $u->setRoles($d['admin'] ? ['ROLE_ADMIN'] : []);
         }

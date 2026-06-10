@@ -90,6 +90,35 @@ async function addCompany() {
   await loadList()
   await select(data.id)
 }
+async function delCompany() {
+  if (!detail.value || !confirm(`Kunde „${detail.value.name}" wirklich löschen?`)) return
+  await api.delete(`/api/companies/${detail.value.id}`)
+  selId.value = null
+  detail.value = null
+  await loadList()
+}
+async function patchContact(id: number, body: Record<string, unknown>) {
+  detail.value = (await api.patch(`/api/contacts/${id}`, body)).data
+  await loadList()
+}
+function editContact(k: Contact) {
+  const name = prompt('Name', k.name)
+  if (name === null) return
+  const department = prompt('Abteilung', k.department) ?? k.department
+  const email = prompt('E-Mail', k.email || '') ?? k.email
+  const phone = prompt('Telefon', k.phone || '') ?? k.phone
+  patchContact(k.id, { name, department, email, phone })
+}
+async function delContact(k: Contact) {
+  if (!confirm(`Kontakt „${k.name}" löschen?`)) return
+  detail.value = (await api.delete(`/api/contacts/${k.id}`)).data
+  await loadList()
+}
+async function delDoc(d: Doc) {
+  if (!confirm(`Dokument „${d.name}" löschen?`)) return
+  detail.value = (await api.delete(`/api/documents/${d.id}`)).data
+  await loadList()
+}
 
 watch(() => route.query.company, (v) => { if (v) select(Number(v)) })
 onMounted(async () => {
@@ -144,7 +173,10 @@ onMounted(async () => {
               <div class="font-head text-[20px] text-ebony tracking-wide">{{ detail.name }}</div>
               <div class="text-[12px] text-neutral-500">{{ detail.subtitle }}</div>
             </div>
-            <span class="ml-auto text-[10px] px-1.5 py-0.5 rounded" style="background:#414c6522;color:#414c65">Kunde (Hersteller)</span>
+            <div class="ml-auto flex items-center gap-2">
+              <span class="text-[10px] px-1.5 py-0.5 rounded" style="background:#414c6522;color:#414c65">Kunde (Hersteller)</span>
+              <button @click="delCompany" title="Kunde löschen" class="w-8 h-8 grid place-items-center rounded-lg text-neutral-400 hover:bg-red-50 hover:text-red-600"><Icon name="trash" class="w-4 h-4" /></button>
+            </div>
           </div>
           <div class="mt-2 flex flex-wrap gap-1">
             <span v-for="t in detail.tags" :key="t" class="text-[10px] px-1.5 py-0.5 rounded" style="background:#eb5d4f18;color:#b23b2e">{{ t }}</span>
@@ -173,10 +205,16 @@ onMounted(async () => {
             <div v-for="(ks, dept) in groupedContacts" :key="dept" class="mt-2">
               <div class="text-[11px] font-semibold text-navy mb-1">{{ dept }}</div>
               <div class="grid grid-cols-2 gap-2">
-                <div v-for="k in ks" :key="k.id" class="bg-white border border-[#e6dad6] rounded-lg px-3 py-2">
-                  <div class="text-[13px] text-ebony font-medium">{{ k.name }}</div>
-                  <div class="text-[11px] text-neutral-500">{{ k.email }}</div>
-                  <div v-if="k.phone" class="text-[11px] text-neutral-400">{{ k.phone }}</div>
+                <div v-for="k in ks" :key="k.id" class="bg-white border border-[#e6dad6] rounded-lg px-3 py-2 flex items-start gap-2">
+                  <div class="min-w-0">
+                    <div class="text-[13px] text-ebony font-medium">{{ k.name }}</div>
+                    <div class="text-[11px] text-neutral-500">{{ k.email }}</div>
+                    <div v-if="k.phone" class="text-[11px] text-neutral-400">{{ k.phone }}</div>
+                  </div>
+                  <div class="ml-auto flex gap-1">
+                    <button @click="editContact(k)" title="Bearbeiten" class="w-7 h-7 grid place-items-center rounded text-neutral-400 hover:bg-beige hover:text-navy"><Icon name="pencil" class="w-3.5 h-3.5" /></button>
+                    <button @click="delContact(k)" title="Löschen" class="w-7 h-7 grid place-items-center rounded text-neutral-400 hover:bg-red-50 hover:text-red-600"><Icon name="trash" class="w-3.5 h-3.5" /></button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -193,6 +231,7 @@ onMounted(async () => {
               <span class="w-7 h-7 rounded bg-coral/10 text-coral text-[10px] flex items-center justify-center font-semibold">{{ d.type }}</span>
               <span class="text-[13px] text-ebony">{{ d.name }}</span>
               <span class="ml-auto text-[11px] text-neutral-400">{{ d.date }}</span>
+              <button @click="delDoc(d)" title="Löschen" class="w-7 h-7 grid place-items-center rounded text-neutral-400 hover:bg-red-50 hover:text-red-600"><Icon name="trash" class="w-3.5 h-3.5" /></button>
             </div>
             <div v-if="!detail.documents.length" class="text-[12px] text-neutral-400">Noch keine Dokumente — „+ Dokument".</div>
           </div>
