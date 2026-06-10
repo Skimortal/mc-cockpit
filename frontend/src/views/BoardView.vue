@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api'
 import { useAuth } from '../stores/auth'
@@ -27,6 +27,15 @@ const tasks = ref<Task[]>([])
 const team = ref<Person[]>([])
 const selected = ref<Task | null>(null)
 const loading = ref(true)
+const replyText = ref('')
+const replyDrafting = ref(false)
+const replySending = ref(false)
+const replyMsg = ref('')
+
+watch(selected, () => {
+  replyText.value = ''
+  replyMsg.value = ''
+})
 
 const statusCols = [
   { key: 'open', label: 'Offen' },
@@ -71,6 +80,32 @@ async function setStatus(task: Task, status: string) {
   const { data } = await api.post(`/api/tasks/${task.id}/status`, { status })
   Object.assign(task, data)
   if (selected.value?.id === task.id) selected.value = { ...task }
+}
+async function draftReply(task: Task) {
+  replyDrafting.value = true
+  replyMsg.value = ''
+  try {
+    const { data } = await api.post(`/api/tasks/${task.id}/draft-reply`)
+    replyText.value = data.draft
+  } catch {
+    replyMsg.value = 'KI-Entwurf fehlgeschlagen.'
+  } finally {
+    replyDrafting.value = false
+  }
+}
+async function sendReply(task: Task) {
+  if (!replyText.value.trim()) return
+  replySending.value = true
+  replyMsg.value = ''
+  try {
+    const { data } = await api.post(`/api/tasks/${task.id}/reply`, { body: replyText.value })
+    replyMsg.value = `Gesendet an ${data.to}.`
+    replyText.value = ''
+  } catch (e: any) {
+    replyMsg.value = 'Senden fehlgeschlagen: ' + (e?.response?.data?.error ?? 'unbekannt')
+  } finally {
+    replySending.value = false
+  }
 }
 function logout() {
   auth.logout()
@@ -181,8 +216,23 @@ onMounted(async () => {
           </div>
         </div>
 
-        <div class="px-5 py-3 border-t border-slate-200 text-xs text-slate-400">
-          Antwort-aus-der-Aufgabe folgt im nächsten Schritt.
+        <div class="px-5 py-3 border-t border-slate-200">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-sm font-semibold text-slate-700">Antwort</span>
+            <button @click="draftReply(selected!)" :disabled="replyDrafting"
+                    class="text-xs px-2 py-1 rounded-lg border border-indigo-300 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50">
+              {{ replyDrafting ? 'KI denkt…' : '✨ KI-Entwurf' }}
+            </button>
+          </div>
+          <textarea v-model="replyText" rows="6" placeholder="Antwort schreiben oder KI-Entwurf holen…"
+                    class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea>
+          <div class="flex items-center justify-between mt-2">
+            <span class="text-xs" :class="replyMsg.startsWith('Gesendet') ? 'text-green-600' : 'text-slate-500'">{{ replyMsg }}</span>
+            <button @click="sendReply(selected!)" :disabled="replySending || !replyText.trim()"
+                    class="text-sm px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">
+              {{ replySending ? 'Sende…' : 'Senden' }}
+            </button>
+          </div>
         </div>
       </aside>
     </transition>

@@ -13,4 +13,7 @@ interface LlmClient
      * @return array<string,mixed>
      */
     public function extract(string $system, string $userText, array $schema, ?string $model = null, int $maxTokens = 1024): array;
+
+    /** Freitext-Antwort (kein Schema) — z. B. für E-Mail-Entwürfe. */
+    public function complete(string $system, string $userText, ?string $model = null, int $maxTokens = 1500): string;
 }
