@@ -143,19 +143,30 @@ function chipFor(c){
   return `<span class="badge" style="background:#eb5d4f;color:#fff">Neu</span>`;
 }
 function inboxHTML(){
-  return visibleConvs().map(c=>`
-    <div data-action="selConv" data-id="${c.id}" class="px-3 py-2.5 border-b border-[#ece1dc] hover:bg-beige cursor-pointer ${state.selConv===c.id?'bg-beige':''} ${c._new?'flash':''}">
-      <div class="flex items-center gap-2">
-        ${c.unread?'<span class="w-1.5 h-1.5 rounded-full bg-coral shrink-0"></span>':'<span class="w-1.5 h-1.5 shrink-0"></span>'}
-        <span class="text-[13px] text-navy font-semibold truncate">${c.from}</span>
-        <span class="ml-auto text-[10px] text-neutral-400 shrink-0">${c.time}</span>
+  const cs=visibleConvs();
+  if(!cs.length)return '<div class="text-xs text-neutral-400 p-4">Keine Mails in diesem Filter.</div>';
+  return '<div class="p-2.5">'+cs.map(c=>{
+    const multi=c.thread.length>1, sel=state.selConv===c.id;
+    return `<div class="relative ${multi?'mb-4':'mb-2.5'} ${c._new?'flash rounded-xl':''}">
+      ${multi&&c.thread.length>2?`<div class="absolute left-3 right-3 top-2 bottom-2 translate-y-[12px] rounded-xl bg-[#ecdfd9] border border-[#e0d2cd]"></div>`:''}
+      ${multi?`<div class="absolute left-1.5 right-1.5 top-1 bottom-1 translate-y-[6px] rounded-xl bg-[#f4ebe7] border border-[#e6dad6]"></div>`:''}
+      <div data-action="selConv" data-id="${c.id}" class="relative bg-white border ${sel?'border-coral ring-2 ring-coral/30':(c.unread?'border-coral/50':'border-[#e6dad6]')} rounded-xl p-3 shadow-sm hover:shadow-md cursor-pointer">
+        <div class="flex items-center gap-2">
+          ${c.unread?'<span class="w-1.5 h-1.5 rounded-full bg-coral shrink-0"></span>':''}
+          <span class="text-[13px] ${c.unread?'text-navy':'text-navy/90'} font-semibold truncate">${c.from}</span>
+          <span class="ml-auto text-[10px] text-neutral-400 shrink-0">${c.time}</span>
+        </div>
+        <div class="text-[12px] text-neutral-600 truncate mt-0.5">${c.subj}</div>
+        <div class="mt-1.5 flex items-center gap-2">
+          ${chipFor(c)}
+          ${multi
+            ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-navy/10 text-navy font-medium">▤ Konversation · ${c.thread.length}</span>`
+            : `<span class="text-[10px] text-neutral-400">einzelne Mail</span>`}
+          ${c.taskId&&taskOf(c)&&taskOf(c).owner?`<span class="ml-auto text-[10px] badge" style="background:#eb5d4f22;color:#b23b2e">${taskOf(c).owner}</span>`:''}
+        </div>
       </div>
-      <div class="flex items-center gap-2 mt-0.5 pl-3.5">
-        <span class="text-[12px] text-neutral-600 truncate">${c.subj}</span>
-        <span class="ml-auto text-[10px] text-neutral-400 shrink-0">✉ ${c.thread.length}</span>
-      </div>
-      <div class="mt-1 pl-3.5 flex items-center gap-2">${chipFor(c)}${c.taskId&&taskOf(c)&&taskOf(c).owner?`<span class="text-[10px] text-neutral-400">· ${taskOf(c).owner}</span>`:''}</div>
-    </div>`).join('') || '<div class="text-xs text-neutral-400 p-4">Keine Mails in diesem Filter.</div>';
+    </div>`;
+  }).join('')+'</div>';
 }
 function cardHTML(t){
   const c=convOf(t);
