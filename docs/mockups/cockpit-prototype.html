@@ -92,16 +92,6 @@ let COMPANIES = [
     fields:[{label:'Steuernummer',value:'BA 12345678'},{label:'EORI',value:'BA…'},{label:'Adresse',value:'Olovo, Bosnien-Herzegowina'}],
     contacts:[{dept:'Direktor',name:'E. Ras',email:'office@almaras.ba',phone:''}],
     docs:[{name:'Rahmenvertrag',type:'PDF',date:'2025-06-01'}], note:'' },
-  { id:3, name:'Hofer / Aldi Süd', type:'handel', sub:'Abnehmer AT/CH/IT/HU/SI + DE', tags:['Diskont'],
-    fields:[{label:'GLN',value:'90012345678'},{label:'Plattform',value:'Ariba'},{label:'Länder',value:'AT, CH, IT, HU, SI, DE'}],
-    contacts:[{dept:'Einkauf',name:'F. Stockmann',email:'stockmann@aldi-sued.de',phone:''},{dept:'QM',name:'HOFER QM',email:'qm@hofer.at',phone:''},{dept:'Logistik',name:'J. Janušič',email:'bpet@hofer.si',phone:''}],
-    docs:[{name:'Lieferantenhandbuch',type:'PDF',date:'2025-03-10'}],
-    note:'Ausschreibungen cross-country (Aldi GS); Zuschlag nach Ländergruppen.' },
-  { id:4, name:'Aldi Nord', type:'handel', sub:'Abnehmer DE', tags:['Diskont'],
-    fields:[{label:'Plattform',value:'Ariba'},{label:'Länder',value:'DE'}],
-    contacts:[{dept:'Einkauf',name:'Aldi Nord Einkauf',email:'einkauf@aldi-nord.de',phone:''}], docs:[], note:'' },
-  { id:5, name:'Edeka', type:'handel', sub:'Abnehmer DE', tags:['Vollsortiment'],
-    fields:[{label:'Länder',value:'DE'}], contacts:[], docs:[], note:'' },
 ];
 const curCompany = () => COMPANIES.find(x=>x.id===state.selCompany);
 
@@ -360,21 +350,20 @@ function visibleCompanies(){
   return cs;
 }
 function companyListHTML(){
-  const seg=(k,l)=>`<button data-action="cfilter" data-id="${k}" class="text-[11px] px-2 py-1 rounded ${state.companyFilter===k?'bg-coral text-white':'text-neutral-500 hover:bg-beige'}">${l}</button>`;
   return `<div class="w-[300px] shrink-0 bg-beige-soft border-r border-[#e6dad6] flex flex-col">
-    <div class="px-3 pt-3 pb-2 flex items-center gap-1">${seg('alle','Alle')}${seg('hersteller','Hersteller')}${seg('handel','Handelsketten')}</div>
-    <div class="overflow-y-auto flex-1 p-2.5">${visibleCompanies().map(c=>`
+    <div class="px-3 pt-3 pb-2 text-[10px] uppercase tracking-wider text-neutral-400">Kunden (Hersteller)</div>
+    <div class="overflow-y-auto flex-1 px-2.5 pb-2.5">${visibleCompanies().map(c=>`
       <div data-action="selCompany" data-id="${c.id}" class="mb-2.5 bg-white border ${state.selCompany===c.id?'border-coral ring-2 ring-coral/30':'border-[#e6dad6]'} rounded-xl p-3 shadow-sm hover:shadow-md cursor-pointer">
         <div class="flex items-center gap-2">
-          <span class="w-8 h-8 rounded-lg flex items-center justify-center text-[11px] font-bold text-white" style="background:${c.type==='hersteller'?'#414c65':'#9d9c87'}">${c.name.slice(0,2).toUpperCase()}</span>
+          <span class="w-8 h-8 rounded-lg flex items-center justify-center text-[11px] font-bold text-white" style="background:#414c65">${c.name.slice(0,2).toUpperCase()}</span>
           <div class="min-w-0"><div class="text-[13px] font-semibold text-navy truncate">${c.name}</div><div class="text-[10px] text-neutral-400 truncate">${c.sub}</div></div>
         </div>
-        <div class="mt-2 flex items-center gap-1.5">
-          <span class="badge" style="${c.type==='hersteller'?'background:#414c6522;color:#414c65':'background:#9d9c8733;color:#6b6a52'}">${c.type==='hersteller'?'Hersteller (Kunde)':'Handelskette'}</span>
-          <span class="text-[10px] text-neutral-400">${c.contacts.length} Kontakte · ${c.docs.length} Dok.</span>
+        <div class="mt-2 flex flex-wrap items-center gap-1.5">
+          ${c.tags.slice(0,3).map(t=>`<span class="badge" style="background:#eb5d4f18;color:#b23b2e">${t}</span>`).join('')}
+          <span class="ml-auto text-[10px] text-neutral-400">${c.contacts.length} Kontakte · ${c.docs.length} Dok.</span>
         </div>
       </div>`).join('')||'<div class="text-xs text-neutral-400 p-4">Keine Treffer.</div>'}
-      <button data-action="addCompany" class="w-full mt-1 py-2 rounded-xl border-2 border-dashed border-[#e0d2cd] text-[12px] text-neutral-400 hover:border-coral hover:text-coral">+ Firma anlegen</button>
+      <button data-action="addCompany" class="w-full mt-1 py-2 rounded-xl border-2 border-dashed border-[#e0d2cd] text-[12px] text-neutral-400 hover:border-coral hover:text-coral">+ Kunde anlegen</button>
     </div>
   </div>`;
 }
@@ -390,7 +379,7 @@ function companyDetailHTML(){
       <div class="flex items-center gap-3">
         <span class="w-12 h-12 rounded-xl flex items-center justify-center text-[15px] font-bold text-white" style="background:${c.type==='hersteller'?'#414c65':'#9d9c87'}">${c.name.slice(0,2).toUpperCase()}</span>
         <div><div class="font-head text-[20px] text-ebony tracking-wide">${c.name}</div><div class="text-[12px] text-neutral-500">${c.sub}</div></div>
-        <span class="ml-auto badge" style="${c.type==='hersteller'?'background:#414c6522;color:#414c65':'background:#9d9c8733;color:#6b6a52'}">${c.type==='hersteller'?'Hersteller (Kunde)':'Handelskette (Abnehmer)'}</span>
+        <span class="ml-auto badge" style="background:#414c6522;color:#414c65">Kunde (Hersteller)</span>
       </div>
       <div class="mt-2 flex flex-wrap gap-1">${c.tags.map(t=>`<span class="badge" style="background:#eb5d4f18;color:#b23b2e">${t}</span>`).join('')}<button data-action="addTagC" class="badge" style="background:#f0e7e3;color:#b7a9a3">+ Tag</button></div>
 
