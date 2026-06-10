@@ -53,6 +53,21 @@ langer Thread (scrollbar) · Senden ok/Fehler · unzugewiesen-Badge (Zähler) al
 ## Responsive
 Schmaler Screen: Posteingang einklappbar (Toggle), Detail-Panel als Vollbild-Overlay.
 
-## Visueller Stil (Default-Vorschlag)
-Ruhig, dicht, „Werkzeug nicht Marketing": Slate/Indigo (wie aktuell), klare Badges je Typ/Status,
-viel Weißraum in Karten, Monospace nur für IDs/Zahlen. Polish via `design-shotgun`, falls gewünscht.
+## Markenidentität (aus Most_Design_Guide.pdf)
+**Farben (CI):**
+- Rotorange `#eb5d4f` (PRIMÄR-Akzent) · Blau/Navy `#414c65` · Beige `#dcd1d0`
+- Ebony `#191118` · Grau `#4e4d4c` · Sage/Grün `#9d9c87` · Limone `#d0cc5a`
+
+**Schriften:** Headlines = **Archivo Black** (VERSALIEN, weite Laufweite, = Logoschrift).
+Fließtext = **Adobe Clean UX** → freier Ersatz **Inter** (beide via Google Fonts: Archivo + Inter).
+
+**Logo:** `MOST_Logo` (einzeilig rotorange/weiß, Bildmarke = Schwung). Liegt in
+`docs/mockups/assets/` (aus den OneDrive-Brand-Assets kopiert).
+
+## Gewählte Stil-Variante: **B — „Warm & kräftig"** ✅ (2026-06-10)
+Beige-Canvas, Navy-Topbar, Rotorange kräftig als Primäraktion, Badges in vollen Markenfarben
+(Etikett=Rotorange, Labor=Sage, ASN=Navy, Muster=Limone, Rechnung=Grau), größere Archivo-Headlines,
+rundere weiße Karten (`rounded-xl`). Markant, on-brand, ohne unruhig zu werden.
+
+Mockup-Vergleich (alle 3 Varianten, umschaltbar): `docs/mockups/cockpit-screen-mockups.html`.
+Diese Variante ist die visuelle Vorlage für den echten Vue-Build des All-in-one-Screens.

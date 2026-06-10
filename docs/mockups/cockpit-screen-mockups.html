@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MOST Connect Cockpit — Mockup-Varianten</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Archivo+Black&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: { extend: {
+    colors: {
+      coral: '#eb5d4f', navy: '#414c65', beige: '#dcd1d0', ebony: '#191118',
+      grau: '#4e4d4c', sage: '#9d9c87', lime2: '#d0cc5a',
+      'beige-soft': '#f1ece9', 'navy-soft': '#54607d',
+    },
+    fontFamily: {
+      head: ['"Archivo Black"', 'system-ui', 'sans-serif'],
+      sans: ['Inter', 'system-ui', 'sans-serif'],
+    },
+  }},
+}
+</script>
+<style>
+  body { font-family: Inter, system-ui, sans-serif; }
+  .brandmark { font-family: "Archivo Black", system-ui; letter-spacing: .12em; }
+  .tabbtn.active { background:#191118; color:#fff; }
+  ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#bbb;border-radius:4px}
+</style>
+</head>
+<body class="bg-neutral-200">
+
+<!-- Variant switcher -->
+<div class="sticky top-0 z-50 bg-ebony text-white flex items-center gap-2 px-4 py-2 shadow">
+  <img src="assets/most-weiss.png" class="h-4 mr-2" alt="MOST Connect">
+  <span class="text-xs text-neutral-500 mr-1">Cockpit</span>
+  <span class="text-xs text-neutral-400 mr-2">· Mockup-Varianten (Layout A · Markenfarben):</span>
+  <button class="tabbtn active text-xs px-3 py-1.5 rounded-md bg-white/10" data-v="A">A · Hell &amp; ruhig</button>
+  <button class="tabbtn text-xs px-3 py-1.5 rounded-md bg-white/10" data-v="B">B · Warm &amp; kräftig</button>
+  <button class="tabbtn text-xs px-3 py-1.5 rounded-md bg-white/10" data-v="C">C · Dark Pro</button>
+  <span class="ml-auto text-[11px] text-neutral-500">Archivo Black + Inter · Rotorange/Navy/Beige</span>
+</div>
+
+<div id="stage"></div>
+
+<script>
+// ---- Beispieldaten (echt angelehnt) ----
+const convs = [
+  {from:'Hofer SI · J. Janušič', subj:'Mehraufwand-Verrechnung PO 4529979330', n:2, state:'aufgabe', task:11, who:'Mirjana', unread:false, t:'09:14'},
+  {from:'Aldi Süd · Stockmann',  subj:'Adresse und Kontaktdaten Tray (Etikett)', n:1, state:'neu', who:null, unread:true, t:'08:02'},
+  {from:'Hofer · QM-Abteilung',  subj:'Notification of Required QM Inspection', n:3, state:'neu', who:null, unread:true, t:'Mo'},
+  {from:'office@hdv-stojakovic',  subj:'PPWR-Kennzeichnung Bakery / Pantry', n:2, state:'aufgabe', task:2, who:'Mirjana', unread:false, t:'Gestern'},
+  {from:'Mirjana Stojakovic',    subj:'Claud racuni (Rechnungen)', n:1, state:'erledigt', who:'Aleksandar', unread:false, t:'Mo'},
+];
+const cols = [
+  {name:'Unzugewiesen', alarm:true, cards:[
+    {title:'Tray-Etikett für Aldi Süd DE anpassen', tag:'Etikett', prio:'Hoch', due:'12.08.', from:'Stockmann'},
+    {title:'QM-Inspektion Premium Pudding 3er einleiten', tag:'Labor', prio:'Hoch', from:'Hofer QM'},
+  ]},
+  {name:'Aleksandar', cards:[
+    {title:'Claud-Rechnungen prüfen und bearbeiten', tag:'Rechnung', from:'M. Stojakovic'},
+  ]},
+  {name:'Mirjana', cards:[
+    {title:'Widerspruch Mehraufwand PO 4529979330 (Hofer SI)', tag:'ASN', prio:'Hoch', from:'Hofer SI'},
+    {title:'PPWR-Kennzeichnung auf Displaykartons klären', tag:'Allgemein', prio:'Hoch', from:'office@'},
+  ]},
+  {name:'Ljubisa', cards:[
+    {title:'Muster Ketchup 1 kg an Aldi senden', tag:'Muster', from:'—'},
+  ]},
+];
+
+// ---- Themes ----
+const T = {
+  A: { // Hell & ruhig
+    page:'bg-beige-soft', topbar:'bg-white border-b border-neutral-200', topText:'text-navy',
+    panel:'bg-white border-neutral-200', inboxBg:'bg-white',
+    itemHover:'hover:bg-beige-soft', itemBorder:'border-neutral-100',
+    from:'text-navy', subj:'text-neutral-500', meta:'text-neutral-400',
+    colHead:'text-navy', count:'bg-neutral-100 text-neutral-500',
+    card:'bg-white border border-neutral-200 shadow-sm hover:shadow', cardTitle:'text-neutral-800',
+    accent:'bg-coral text-white', accentSoft:'bg-coral/10 text-coral',
+    tabActive:'bg-coral text-white', tabIdle:'text-neutral-500 hover:bg-neutral-100',
+    detailBg:'bg-white', mono:'font-sans',
+    badges:{Etikett:'bg-coral/10 text-coral',Labor:'bg-sage/20 text-[#6b6a52]',ASN:'bg-navy/10 text-navy',Muster:'bg-lime2/25 text-[#6f6b1e]',Rechnung:'bg-neutral-100 text-grau',Allgemein:'bg-neutral-100 text-neutral-500'},
+    chips:{neu:'bg-coral/10 text-coral',aufgabe:'bg-navy/10 text-navy',erledigt:'bg-neutral-100 text-neutral-400 line-through'},
+    alarm:'text-coral',
+  },
+  B: { // Warm & kräftig
+    page:'bg-beige', topbar:'bg-navy text-white border-b border-navy', topText:'text-white',
+    panel:'bg-white/70 border-[#cdbfba]', inboxBg:'bg-[#faf6f4]',
+    itemHover:'hover:bg-beige', itemBorder:'border-[#e6dad6]',
+    from:'text-navy font-semibold', subj:'text-neutral-600', meta:'text-neutral-400',
+    colHead:'text-navy', count:'bg-coral/15 text-coral',
+    card:'bg-white border border-[#e6dad6] shadow-sm hover:shadow-md rounded-xl', cardTitle:'text-ebony',
+    accent:'bg-coral text-white', accentSoft:'bg-coral/15 text-coral',
+    tabActive:'bg-coral text-white', tabIdle:'text-navy hover:bg-beige',
+    detailBg:'bg-[#faf6f4]', mono:'font-sans',
+    badges:{Etikett:'bg-coral text-white',Labor:'bg-sage text-white',ASN:'bg-navy text-white',Muster:'bg-lime2 text-ebony',Rechnung:'bg-grau text-white',Allgemein:'bg-neutral-200 text-neutral-600'},
+    chips:{neu:'bg-coral text-white',aufgabe:'bg-navy text-white',erledigt:'bg-neutral-200 text-neutral-500 line-through'},
+    alarm:'text-coral',
+  },
+  C: { // Dark Pro
+    page:'bg-ebony', topbar:'bg-[#15101a] border-b border-white/10 text-white', topText:'text-beige',
+    panel:'bg-[#221a26] border-white/10', inboxBg:'bg-[#1c1620]',
+    itemHover:'hover:bg-white/5', itemBorder:'border-white/5',
+    from:'text-beige font-medium', subj:'text-neutral-400', meta:'text-neutral-500',
+    colHead:'text-beige', count:'bg-white/10 text-neutral-400',
+    card:'bg-[#2a2230] border border-white/10 hover:border-coral/40', cardTitle:'text-beige',
+    accent:'bg-coral text-white', accentSoft:'bg-coral/20 text-coral',
+    tabActive:'bg-coral text-white', tabIdle:'text-neutral-400 hover:bg-white/10',
+    detailBg:'bg-[#1c1620]', mono:'font-mono',
+    badges:{Etikett:'bg-coral/20 text-coral',Labor:'bg-sage/25 text-sage',ASN:'bg-navy-soft/40 text-[#aab6d6]',Muster:'bg-lime2/20 text-lime2',Rechnung:'bg-white/10 text-neutral-300',Allgemein:'bg-white/10 text-neutral-400'},
+    chips:{neu:'bg-coral/20 text-coral',aufgabe:'bg-navy-soft/40 text-[#aab6d6]',erledigt:'bg-white/5 text-neutral-500 line-through'},
+    alarm:'text-coral',
+  },
+};
+
+function chip(t, c){
+  const map={neu:'Neu', aufgabe:'→ Aufgabe #'+(c.task||''), erledigt:'erledigt'};
+  return `<span class="text-[10px] px-1.5 py-0.5 rounded ${t.chips[c.state]}">${map[c.state]}</span>`;
+}
+function inboxItem(t,c){
+  return `<div class="px-3 py-2.5 border-b ${t.itemBorder} ${t.itemHover} cursor-pointer">
+    <div class="flex items-center gap-2">
+      ${c.unread?'<span class="w-1.5 h-1.5 rounded-full bg-coral shrink-0"></span>':'<span class="w-1.5 h-1.5 shrink-0"></span>'}
+      <span class="text-[13px] ${t.from} truncate">${c.from}</span>
+      <span class="ml-auto text-[10px] ${t.meta} shrink-0">${c.t}</span>
+    </div>
+    <div class="flex items-center gap-2 mt-0.5 pl-3.5">
+      <span class="text-[12px] ${t.subj} truncate">${c.subj}</span>
+      <span class="ml-auto text-[10px] ${t.meta} shrink-0">✉ ${c.n}</span>
+    </div>
+    <div class="mt-1 pl-3.5 flex items-center gap-2">${chip(t,c)}${c.who?`<span class="text-[10px] ${t.meta}">· ${c.who}</span>`:''}</div>
+  </div>`;
+}
+function card(t,c){
+  return `<div class="${t.card} rounded-lg p-2.5 cursor-pointer transition">
+    <div class="flex items-center gap-1.5 mb-1.5">
+      <span class="text-[10px] px-1.5 py-0.5 rounded ${t.badges[c.tag]||t.badges.Allgemein}">${c.tag}</span>
+      ${c.prio?`<span class="text-[10px] px-1.5 py-0.5 rounded ${t.chips.neu}">${c.prio}</span>`:''}
+      ${c.due?`<span class="ml-auto text-[10px] ${t.meta}">⏱ ${c.due}</span>`:''}
+    </div>
+    <div class="text-[12.5px] leading-snug ${t.cardTitle}">${c.title}</div>
+    <div class="mt-1.5 text-[10px] ${t.meta}">${c.from}</div>
+  </div>`;
+}
+function column(t,col){
+  return `<div class="w-56 shrink-0">
+    <div class="flex items-center justify-between mb-2 px-1">
+      <span class="text-[12px] font-semibold ${col.alarm?t.alarm:t.colHead}">${col.alarm?'⚠ ':''}${col.name}</span>
+      <span class="text-[10px] px-1.5 rounded-full ${t.count}">${col.cards.length}</span>
+    </div>
+    <div class="space-y-2">${col.cards.map(c=>card(t,c)).join('')}</div>
+  </div>`;
+}
+function screen(key){
+  const t=T[key];
+  const logo = key==='C' ? 'assets/most-weiss.png' : (key==='B' ? 'assets/most-weiss.png' : 'assets/most-rotorange.png');
+  return `<div class="${t.page} h-[calc(100vh-44px)] flex flex-col">
+    <!-- Topbar -->
+    <div class="${t.topbar} flex items-center gap-3 px-5 py-2.5">
+      <img src="${logo}" class="h-5" alt="MOST Connect">
+      <span class="text-[12px] ${t.topText} opacity-60">Cockpit</span>
+      <div class="ml-4 flex items-center gap-1 text-[11px] ${t.topText} opacity-60">
+        <span class="px-2 py-1 rounded border border-current/20">🔍 Suchen…</span>
+      </div>
+      <div class="ml-auto flex items-center gap-3 text-[12px] ${t.topText}">
+        <span class="opacity-70">Gruppierung: <b>Person</b> ▾</span>
+        <span class="opacity-70">⟳ Abrufen</span>
+        <span class="opacity-90">Aleksandar ▾</span>
+      </div>
+    </div>
+    <!-- Split -->
+    <div class="flex-1 flex min-h-0">
+      <!-- Inbox -->
+      <div class="w-[340px] shrink-0 ${t.inboxBg} border-r ${t.panel} flex flex-col">
+        <div class="px-3 pt-3 pb-2 flex items-center gap-1 text-[11px]">
+          <span class="px-2 py-1 rounded ${t.accent}">Alle</span>
+          <span class="px-2 py-1 rounded ${t.tabIdle}">Ungelesen</span>
+          <span class="px-2 py-1 rounded ${t.tabIdle}">ohne Aufgabe</span>
+        </div>
+        <div class="px-3 pb-1 text-[10px] uppercase tracking-wider ${t.meta}">Posteingang</div>
+        <div class="overflow-y-auto flex-1">${convs.map(c=>inboxItem(t,c)).join('')}</div>
+      </div>
+      <!-- Kanban -->
+      <div class="flex-1 min-w-0 flex flex-col">
+        <div class="px-5 pt-3 pb-2 text-[10px] uppercase tracking-wider ${t.meta}">Aufgaben — nach Person</div>
+        <div class="flex-1 overflow-x-auto px-5 pb-4"><div class="flex gap-4 h-full">${cols.map(c=>column(t,c)).join('')}</div></div>
+      </div>
+      <!-- Detail panel -->
+      <div class="w-[360px] shrink-0 ${t.detailBg} border-l ${t.panel} flex flex-col">
+        <div class="px-4 py-3 border-b ${t.panel} flex items-center gap-2">
+          <span class="text-[10px] px-1.5 py-0.5 rounded ${t.badges.ASN}">ASN</span>
+          <span class="text-[10px] px-1.5 py-0.5 rounded ${t.chips.neu}">Hoch</span>
+          <span class="ml-auto ${t.meta} text-lg leading-none">×</span>
+        </div>
+        <div class="px-4 py-3 overflow-y-auto flex-1">
+          <div class="text-[15px] font-semibold ${t.from}">Widerspruch Mehraufwand PO 4529979330</div>
+          <div class="text-[11px] ${t.meta} mt-1">Hofer SI · J. Janušič · 09:14</div>
+          <div class="mt-3 p-2.5 rounded-lg ${t.accentSoft} text-[12px]"><b>KI:</b> Hofer SI besteht auf 25 € Mehraufwand; Manhattan-Systemfehler als Begründung, Bestätigung Fr. Wittmann ausstehend.</div>
+          <div class="mt-3 flex items-center gap-2 text-[11px] ${t.subj}">
+            <span>Zuständig:</span><span class="px-2 py-1 rounded ${t.accentSoft}">Mirjana ▾</span>
+          </div>
+          <div class="mt-2 flex gap-1 text-[10px]">
+            <span class="px-2 py-1 rounded ${t.accent}">Offen</span>
+            <span class="px-2 py-1 rounded ${t.tabIdle}">In Arbeit</span>
+            <span class="px-2 py-1 rounded ${t.tabIdle}">Wartet</span>
+            <span class="px-2 py-1 rounded ${t.tabIdle}">Erledigt</span>
+          </div>
+          <div class="mt-3 pt-3 border-t ${t.panel}">
+            <div class="text-[11px] uppercase tracking-wide ${t.meta} mb-1">Thread</div>
+            <div class="text-[12px] ${t.subj} ${t.mono} leading-relaxed">&gt; Sehr geehrte Damen und Herren, bezüglich PO 4529979330 müssen wir einen Mehraufwand von 25 € verrechnen …</div>
+          </div>
+        </div>
+        <div class="px-4 py-3 border-t ${t.panel}">
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-[12px] font-semibold ${t.from}">Antwort</span>
+            <span class="text-[10px] px-2 py-1 rounded ${t.accentSoft}">✨ KI-Entwurf</span>
+          </div>
+          <div class="h-12 rounded-lg border ${t.panel} ${t.inboxBg}"></div>
+          <div class="mt-2 flex justify-end"><span class="text-[11px] px-3 py-1.5 rounded-lg ${t.accent}">Senden</span></div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+const stage=document.getElementById('stage');
+function show(k){ stage.innerHTML=screen(k); document.querySelectorAll('.tabbtn').forEach(b=>b.classList.toggle('active', b.dataset.v===k)); }
+document.querySelectorAll('.tabbtn').forEach(b=>b.addEventListener('click',()=>show(b.dataset.v)));
+show('A');
+</script>
+</body>
+</html>
