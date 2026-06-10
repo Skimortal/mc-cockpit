@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api'
 import { useAuth } from '../stores/auth'
@@ -178,11 +178,14 @@ function onDrop(col: { type: string; val: string }) {
 }
 
 watch(() => route.query.conv, (v) => { if (v) selectConv(Number(v)) })
+let pollTimer: ReturnType<typeof setInterval> | undefined
 onMounted(async () => {
   if (!auth.me) await auth.fetchMe().catch(() => {})
   await loadAll()
   if (route.query.conv) selectConv(Number(route.query.conv))
+  pollTimer = setInterval(() => loadInbox(), 60000) // Posteingang automatisch frisch halten
 })
+onBeforeUnmount(() => clearInterval(pollTimer))
 </script>
 
 <template>

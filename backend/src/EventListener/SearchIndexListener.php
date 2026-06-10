@@ -8,7 +8,9 @@ use App\Entity\Email;
 use App\Entity\Task;
 use App\Service\Search\SearchIndexer;
 use Doctrine\Bundle\DoctrineBundle\Attribute\AsDoctrineListener;
-use Doctrine\ORM\Event\LifecycleEventArgs;
+use Doctrine\ORM\Event\PostPersistEventArgs;
+use Doctrine\ORM\Event\PostRemoveEventArgs;
+use Doctrine\ORM\Event\PostUpdateEventArgs;
 use Doctrine\ORM\Events;
 
 /** Hält den Meilisearch-Index bei jeder Änderung aktuell. */
@@ -21,17 +23,17 @@ class SearchIndexListener
     {
     }
 
-    public function postPersist(LifecycleEventArgs $args): void
+    public function postPersist(PostPersistEventArgs $args): void
     {
         $this->sync($args->getObject(), false);
     }
 
-    public function postUpdate(LifecycleEventArgs $args): void
+    public function postUpdate(PostUpdateEventArgs $args): void
     {
         $this->sync($args->getObject(), false);
     }
 
-    public function postRemove(LifecycleEventArgs $args): void
+    public function postRemove(PostRemoveEventArgs $args): void
     {
         $this->sync($args->getObject(), true);
     }

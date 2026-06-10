@@ -16,6 +16,23 @@ services:
       db:
         condition: service_healthy
 
+  # Hintergrund-Abruf: synchronisiert die Postfächer regelmäßig (ohne Triage).
+  mailsync:
+    build: .
+    container_name: mc_cockpit_mailsync
+    working_dir: /var/www/html
+    command: sh -c "sleep 12; while true; do php bin/console app:fetch-mail --since-days=3 --limit=40 >/dev/null 2>&1 || true; sleep 90; done"
+    volumes:
+      - ../backend:/var/www/html:cached
+      - ./php-custom.ini:/usr/local/etc/php/conf.d/zz-custom.ini:ro
+    environment:
+      DATABASE_URL: "postgresql://cockpit:cockpit@db:5432/cockpit?serverVersion=16&charset=utf8"
+      MEILI_HOST: "http://meili:7700"
+      MEILI_KEY: "devmasterkey"
+    depends_on:
+      db:
+        condition: service_healthy
+
   nginx:
     image: nginx:1.27
     container_name: mc_cockpit_nginx

@@ -9,6 +9,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
@@ -23,9 +24,18 @@ class FetchMailCommand extends Command
         parent::__construct();
     }
 
+    protected function configure(): void
+    {
+        $this
+            ->addOption('limit', null, InputOption::VALUE_REQUIRED, 'Max. Mails pro Postfach', '50')
+            ->addOption('since-days', null, InputOption::VALUE_REQUIRED, 'Zeitfenster in Tagen', '14');
+    }
+
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
+        $limit = max(1, (int) $input->getOption('limit'));
+        $sinceDays = max(1, (int) $input->getOption('since-days'));
         $mailboxes = $this->em->getRepository(Mailbox::class)->findBy(['active' => true]);
 
         if (!$mailboxes) {
@@ -41,7 +51,7 @@ class FetchMailCommand extends Command
                 continue;
             }
             try {
-                $messages = $this->poller->poll($mailbox);
+                $messages = $this->poller->poll($mailbox, $limit, $sinceDays);
                 $new = 0;
                 foreach ($messages as $msg) {
                     if ($this->threader->ingest($mailbox, $msg)) {
