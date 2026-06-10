@@ -6,6 +6,8 @@ use App\Entity\Conversation;
 use App\Entity\Mailbox;
 use App\Entity\Task;
 use App\Entity\User;
+use App\Mail\ConversationThreader;
+use App\Mail\ImapPoller;
 use App\Service\Triage\EmailTriageService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -20,7 +22,37 @@ class InboxController extends AbstractController
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly EmailTriageService $triage,
+        private readonly ImapPoller $poller,
+        private readonly ConversationThreader $threader,
     ) {
+    }
+
+    /** Manueller Abruf der sichtbaren Postfächer (größeres Fenster, neueste zuerst). */
+    #[Route('/api/inbox/fetch', methods: ['POST'])]
+    public function fetch(#[CurrentUser] ?User $user, Request $request): JsonResponse
+    {
+        $mbId = json_decode($request->getContent(), true)['mailbox'] ?? null;
+        $new = 0;
+        $errors = [];
+        foreach ($this->visibleMailboxes($user) as $m) {
+            if ($mbId && (int) $mbId !== $m->id) {
+                continue;
+            }
+            if ('' === $m->password) {
+                continue;
+            }
+            try {
+                foreach ($this->poller->poll($m, 150, 90) as $msg) {
+                    if ($this->threader->ingest($m, $msg)) {
+                        ++$new;
+                    }
+                }
+            } catch (\Throwable $e) {
+                $errors[] = $m->name;
+            }
+        }
+
+        return $this->json(['new' => $new, 'errors' => $errors]);
     }
 
     #[Route('/api/mailboxes', methods: ['GET'])]

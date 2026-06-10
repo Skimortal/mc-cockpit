@@ -40,8 +40,8 @@ final class ImapPoller
         $messages = $folder->query()
             ->since($since)
             ->limit($limit)
-            ->setFetchOrder('asc')
-            ->leaveUnread() // markiert nichts als gelesen (stört FreeScout im Übergang nicht)
+            ->setFetchOrder('desc') // neueste zuerst -> bei vollen Postfächern gehen aktuelle Mails nie verloren
+            ->leaveUnread()
             ->get();
 
         $result = [];

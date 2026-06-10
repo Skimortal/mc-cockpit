@@ -109,6 +109,22 @@ async function loadAll() {
   await Promise.all([loadInbox(), loadBoard()])
   loading.value = false
 }
+const fetching = ref(false)
+const fetchMsg = ref('')
+async function manualFetch() {
+  fetching.value = true
+  fetchMsg.value = ''
+  try {
+    const { data } = await api.post('/api/inbox/fetch', mailboxFilter.value ? { mailbox: Number(mailboxFilter.value) } : {})
+    await Promise.all([loadInbox(), loadBoard()])
+    fetchMsg.value = data.errors?.length ? `Fehler: ${data.errors.join(', ')}` : `${data.new} neu`
+  } catch {
+    fetchMsg.value = 'Abruf fehlgeschlagen'
+  } finally {
+    fetching.value = false
+    setTimeout(() => (fetchMsg.value = ''), 5000)
+  }
+}
 
 async function selectConv(id: number) {
   selConvId.value = id
@@ -208,6 +224,13 @@ onBeforeUnmount(() => clearInterval(pollTimer))
         <div class="px-3 pt-2 pb-1 flex items-center gap-1 text-[11px]">
           <button @click="inboxFilter = 'alle'" class="px-2 py-1 rounded" :class="inboxFilter === 'alle' ? 'bg-coral text-white' : 'text-neutral-500 hover:bg-beige'">Alle</button>
           <button @click="inboxFilter = 'neu'" class="px-2 py-1 rounded" :class="inboxFilter === 'neu' ? 'bg-coral text-white' : 'text-neutral-500 hover:bg-beige'">ohne Aufgabe</button>
+          <div class="ml-auto flex items-center gap-1.5">
+            <span v-if="fetchMsg" class="text-[10px] text-neutral-400">{{ fetchMsg }}</span>
+            <button @click="manualFetch" :disabled="fetching" title="Mails jetzt abrufen" class="flex items-center gap-1 text-navy hover:text-coral disabled:opacity-50">
+              <Icon name="refresh" class="w-4 h-4" :class="fetching ? 'animate-spin' : ''" />
+              <span class="text-[11px]">{{ fetching ? 'Abrufen…' : 'Abrufen' }}</span>
+            </button>
+          </div>
         </div>
         <div class="overflow-y-auto flex-1 px-2.5 pb-2.5">
           <div v-if="loading" class="text-xs text-neutral-400 p-3">Lädt…</div>
