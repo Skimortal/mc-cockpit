@@ -5,6 +5,7 @@ import api from '../api'
 import { useAuth } from '../stores/auth'
 import AppTopbar from '../components/AppTopbar.vue'
 import Icon from '../components/Icon.vue'
+import { confirmDialog, promptDialog } from '../composables/dialog'
 
 const auth = useAuth()
 const route = useRoute()
@@ -43,55 +44,62 @@ async function patch(body: Record<string, unknown>) {
   detail.value = (await api.patch(`/api/companies/${selId.value}`, body)).data
   await loadList()
 }
-function addField() {
-  const label = prompt('Feldname (z. B. „USt-ID DE", „GLN", „Zahlungsziel")')
-  if (!label || !detail.value) return
-  const value = prompt('Wert') || ''
-  patch({ customFields: [...detail.value.fields, { label, value }] })
+async function addField() {
+  if (!detail.value) return
+  const r = await promptDialog([{ key: 'label', label: 'Feldname (z. B. USt-ID DE, GLN, Zahlungsziel)' }, { key: 'value', label: 'Wert' }], { title: 'Feld hinzufügen' })
+  if (!r || !r.label) return
+  patch({ customFields: [...detail.value.fields, { label: r.label, value: r.value }] })
 }
-function editField(i: number) {
+async function editField(i: number) {
   if (!detail.value) return
   const f = detail.value.fields[i]
-  const v = prompt(f.label, f.value)
-  if (v === null) return
+  const r = await promptDialog([{ key: 'value', label: f.label, value: f.value }], { title: 'Feld bearbeiten' })
+  if (!r) return
   const fields = detail.value.fields.slice()
-  fields[i] = { label: f.label, value: v }
+  fields[i] = { label: f.label, value: r.value }
   patch({ customFields: fields })
 }
-function addTag() {
-  const t = prompt('Tag')
-  if (t && detail.value) patch({ tags: [...detail.value.tags, t] })
-}
-function editNote() {
+async function addTag() {
   if (!detail.value) return
-  const n = prompt('Notiz', detail.value.note || '')
-  if (n !== null) patch({ note: n })
+  const r = await promptDialog([{ key: 'tag', label: 'Tag' }], { title: 'Tag hinzufügen' })
+  if (r && r.tag) patch({ tags: [...detail.value.tags, r.tag] })
+}
+async function editNote() {
+  if (!detail.value) return
+  const r = await promptDialog([{ key: 'note', label: 'Notiz', value: detail.value.note || '', type: 'textarea' }], { title: 'Notiz bearbeiten' })
+  if (r) patch({ note: r.note })
 }
 async function addContact() {
-  const department = prompt('Abteilung (Direktor / Logistik / Finanzen / Einkauf / QM …)')
-  if (!department || !selId.value) return
-  const name = prompt('Name') || ''
-  const email = prompt('E-Mail') || ''
-  await api.post(`/api/companies/${selId.value}/contacts`, { department, name, email })
+  if (!selId.value) return
+  const r = await promptDialog([
+    { key: 'department', label: 'Abteilung (Direktor / Logistik / Finanzen / Einkauf / QM …)' },
+    { key: 'name', label: 'Name' },
+    { key: 'email', label: 'E-Mail' },
+    { key: 'phone', label: 'Telefon' },
+  ], { title: 'Ansprechpartner hinzufügen' })
+  if (!r) return
+  await api.post(`/api/companies/${selId.value}/contacts`, r)
   await select(selId.value)
   await loadList()
 }
 async function addDoc() {
-  const name = prompt('Dokumentname')
-  if (!name || !selId.value) return
-  await api.post(`/api/companies/${selId.value}/documents`, { name, type: 'PDF' })
+  if (!selId.value) return
+  const r = await promptDialog([{ key: 'name', label: 'Dokumentname' }], { title: 'Dokument hinzufügen' })
+  if (!r || !r.name) return
+  await api.post(`/api/companies/${selId.value}/documents`, { name: r.name, type: 'PDF' })
   await select(selId.value)
   await loadList()
 }
 async function addCompany() {
-  const name = prompt('Firmenname (Hersteller)')
-  if (!name) return
-  const { data } = await api.post('/api/companies', { name, kind: 'hersteller' })
+  const r = await promptDialog([{ key: 'name', label: 'Firmenname (Hersteller)' }], { title: 'Kunde anlegen' })
+  if (!r || !r.name) return
+  const { data } = await api.post('/api/companies', { name: r.name, kind: 'hersteller' })
   await loadList()
   await select(data.id)
 }
 async function delCompany() {
-  if (!detail.value || !confirm(`Kunde „${detail.value.name}" wirklich löschen?`)) return
+  if (!detail.value) return
+  if (!(await confirmDialog(`Kunde „${detail.value.name}" wirklich löschen?`, { title: 'Kunde löschen', danger: true, okText: 'Löschen' }))) return
   await api.delete(`/api/companies/${detail.value.id}`)
   selId.value = null
   detail.value = null
@@ -101,21 +109,23 @@ async function patchContact(id: number, body: Record<string, unknown>) {
   detail.value = (await api.patch(`/api/contacts/${id}`, body)).data
   await loadList()
 }
-function editContact(k: Contact) {
-  const name = prompt('Name', k.name)
-  if (name === null) return
-  const department = prompt('Abteilung', k.department) ?? k.department
-  const email = prompt('E-Mail', k.email || '') ?? k.email
-  const phone = prompt('Telefon', k.phone || '') ?? k.phone
-  patchContact(k.id, { name, department, email, phone })
+async function editContact(k: Contact) {
+  const r = await promptDialog([
+    { key: 'name', label: 'Name', value: k.name },
+    { key: 'department', label: 'Abteilung', value: k.department },
+    { key: 'email', label: 'E-Mail', value: k.email || '' },
+    { key: 'phone', label: 'Telefon', value: k.phone || '' },
+  ], { title: 'Kontakt bearbeiten' })
+  if (!r) return
+  patchContact(k.id, r)
 }
 async function delContact(k: Contact) {
-  if (!confirm(`Kontakt „${k.name}" löschen?`)) return
+  if (!(await confirmDialog(`Kontakt „${k.name}" löschen?`, { title: 'Kontakt löschen', danger: true, okText: 'Löschen' }))) return
   detail.value = (await api.delete(`/api/contacts/${k.id}`)).data
   await loadList()
 }
 async function delDoc(d: Doc) {
-  if (!confirm(`Dokument „${d.name}" löschen?`)) return
+  if (!(await confirmDialog(`Dokument „${d.name}" löschen?`, { title: 'Dokument löschen', danger: true, okText: 'Löschen' }))) return
   detail.value = (await api.delete(`/api/documents/${d.id}`)).data
   await loadList()
 }

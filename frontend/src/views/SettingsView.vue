@@ -4,6 +4,7 @@ import api from '../api'
 import { useAuth } from '../stores/auth'
 import AppTopbar from '../components/AppTopbar.vue'
 import Icon from '../components/Icon.vue'
+import { confirmDialog, promptDialog, alertDialog } from '../composables/dialog'
 
 const auth = useAuth()
 const isAdmin = computed(() => auth.me?.roles?.includes('ROLE_ADMIN') ?? false)
@@ -36,7 +37,7 @@ async function saveForm() {
   await loadMailboxes()
 }
 async function delMailbox(m: MB) {
-  if (!confirm(`Postfach „${m.name}" löschen?`)) return
+  if (!(await confirmDialog(`Postfach „${m.name}" löschen?`, { title: 'Postfach löschen', danger: true, okText: 'Löschen' }))) return
   await api.delete(`/api/mailboxes/${m.id}`)
   await loadMailboxes()
 }
@@ -52,11 +53,11 @@ async function saveUser() {
 }
 async function toggleAdmin(u: UserRow) { await api.patch(`/api/users/${u.id}`, { admin: !u.isAdmin }); await loadUsers() }
 async function resetPw(u: UserRow) {
-  const pw = prompt(`Neues Passwort für ${u.name}`)
-  if (pw) { await api.patch(`/api/users/${u.id}`, { password: pw }); alert('Passwort gesetzt.') }
+  const r = await promptDialog([{ key: 'pw', label: `Neues Passwort für ${u.name}`, type: 'password' }], { title: 'Passwort zurücksetzen' })
+  if (r && r.pw) { await api.patch(`/api/users/${u.id}`, { password: r.pw }); await alertDialog('Passwort gesetzt.') }
 }
 async function delUser(u: UserRow) {
-  if (!confirm(`Benutzer „${u.name}" löschen?`)) return
+  if (!(await confirmDialog(`Benutzer „${u.name}" löschen?`, { title: 'Benutzer löschen', danger: true, okText: 'Löschen' }))) return
   await api.delete(`/api/users/${u.id}`)
   await loadUsers()
 }
@@ -75,14 +76,16 @@ async function saveProfile() {
   }
 }
 async function patchUser(id: number, body: Record<string, unknown>) {
-  try { await api.patch(`/api/users/${id}`, body); await loadUsers() } catch (e: any) { alert(e?.response?.data?.error ?? 'Fehler') }
+  try { await api.patch(`/api/users/${id}`, body); await loadUsers() } catch (e: any) { await alertDialog(e?.response?.data?.error ?? 'Fehler') }
 }
-function editUser(u: UserRow) {
-  const firstName = prompt('Vorname', u.firstName)
-  if (firstName === null) return
-  const lastName = prompt('Nachname', u.lastName) ?? u.lastName
-  const email = prompt('E-Mail', u.email) ?? u.email
-  patchUser(u.id, { firstName, lastName, email })
+async function editUser(u: UserRow) {
+  const r = await promptDialog([
+    { key: 'firstName', label: 'Vorname', value: u.firstName },
+    { key: 'lastName', label: 'Nachname', value: u.lastName },
+    { key: 'email', label: 'E-Mail', value: u.email },
+  ], { title: 'Benutzer bearbeiten' })
+  if (!r) return
+  patchUser(u.id, r)
 }
 async function loadMailboxes() { mailboxes.value = (await api.get('/api/mailboxes/manage')).data }
 async function loadUsers() { if (isAdmin.value) users.value = (await api.get('/api/users')).data }
