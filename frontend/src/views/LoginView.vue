@@ -31,7 +31,7 @@ async function submit() {
       <!-- große, dezente Bildmarke -->
       <img src="/most-mark.png" class="absolute -right-16 -bottom-16 w-[28rem] opacity-10 select-none" alt="" />
       <div class="relative z-10 flex flex-col justify-between p-12 w-full">
-        <img src="/most-weiss.png" class="h-7" alt="MOST Connect" />
+        <img src="/most-weiss.png" class="h-7 w-auto self-start" alt="MOST Connect" />
         <div>
           <h2 class="font-head text-[34px] leading-tight tracking-wide">Ein Cockpit.</h2>
           <p class="text-white/70 text-[15px] mt-3 max-w-sm">Posteingang, Aufgaben und Kunden an einem Ort — nichts fällt mehr durch.</p>
