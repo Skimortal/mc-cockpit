@@ -22,6 +22,10 @@ class Contact
     #[ORM\Column(length: 50, nullable: true)]
     public ?string $function = null;
 
+    /** Abteilung als Freitext (Direktor, Logistik, Finanzen, Einkauf, QM …). */
+    #[ORM\Column(length: 80, nullable: true)]
+    public ?string $department = null;
+
     #[ORM\ManyToOne(targetEntity: Company::class)]
     public ?Company $company = null;
 

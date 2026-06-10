@@ -3,6 +3,8 @@
 namespace App\Entity;
 
 use ApiPlatform\Metadata\ApiResource;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 
 /** Aufgabe – häufig aus einer eingehenden E-Mail per KI-Triage erzeugt. */
@@ -58,11 +60,21 @@ class Task
     #[ORM\Column(type: 'text', nullable: true)]
     public ?string $description = null;
 
+    /** @var list<string> Tags (GitLab-Stil): Ausschreibung, Muster, Reklamation, Labor, Logistik, Rechnung … */
+    #[ORM\Column(type: 'json', options: ['default' => '[]'])]
+    public array $tags = [];
+
+    /** @var Collection<int, TaskComment> */
+    #[ORM\OneToMany(mappedBy: 'task', targetEntity: TaskComment::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
+    #[ORM\OrderBy(['createdAt' => 'ASC'])]
+    public Collection $comments;
+
     #[ORM\Column(type: 'datetime_immutable')]
     public \DateTimeImmutable $createdAt;
 
     public function __construct()
     {
         $this->createdAt = new \DateTimeImmutable();
+        $this->comments = new ArrayCollection();
     }
 }

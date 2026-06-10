@@ -3,6 +3,7 @@
 namespace App\Controller;
 
 use App\Entity\Task;
+use App\Entity\TaskComment;
 use App\Entity\User;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -67,6 +68,33 @@ class BoardController extends AbstractController
         return $this->json($this->taskArr($task));
     }
 
+    #[Route('/api/tasks/{id}/tags', methods: ['POST'])]
+    public function tags(Task $task, Request $request): JsonResponse
+    {
+        $tags = json_decode($request->getContent(), true)['tags'] ?? [];
+        $task->tags = \is_array($tags) ? array_values(array_filter(array_map('strval', $tags))) : [];
+        $this->em->flush();
+
+        return $this->json($this->taskArr($task));
+    }
+
+    #[Route('/api/tasks/{id}/comments', methods: ['POST'])]
+    public function comment(Task $task, Request $request, #[CurrentUser] ?User $user): JsonResponse
+    {
+        $body = trim((string) (json_decode($request->getContent(), true)['body'] ?? ''));
+        if ('' === $body) {
+            return $this->json(['error' => 'Leerer Kommentar.'], 400);
+        }
+        $c = new TaskComment();
+        $c->task = $task;
+        $c->authorName = $user ? (trim($user->getFirstName().' '.$user->getLastName()) ?: $user->getEmail()) : '?';
+        $c->body = $body;
+        $this->em->persist($c);
+        $this->em->flush();
+
+        return $this->json($this->taskArr($task));
+    }
+
     /** @return array<string,mixed> */
     private function taskArr(Task $t): array
     {
@@ -85,6 +113,12 @@ class BoardController extends AbstractController
             'conversationId' => $t->conversation?->id,
             'companyName' => $t->company?->name,
             'tenderName' => $t->tender?->name,
+            'tags' => $t->tags,
+            'comments' => array_map(fn (TaskComment $k) => [
+                'author' => $k->authorName,
+                'body' => $k->body,
+                'createdAt' => $k->createdAt->format('Y-m-d H:i'),
+            ], $t->comments->toArray()),
             'source' => $src ? [
                 'subject' => $src->subject,
                 'from' => $src->fromAddress,
