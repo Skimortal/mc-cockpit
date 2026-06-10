@@ -1,0 +1,97 @@
+name: mc_cockpit
+
+# Produktiv-Stack für crm.most-connect.com (Server quigon).
+# Läuft hinter dem zentralen nginx_proxy am externen Docker-Netz "webnet".
+# Der Proxy erreicht den Web-Container über den Netz-Alias mc_cockpit_web.
+
+x-app-env: &app-env
+  APP_ENV: prod
+  APP_DEBUG: "0"
+  APP_SECRET: ${APP_SECRET}
+  DATABASE_URL: "postgresql://cockpit:${POSTGRES_PASSWORD}@db:5432/cockpit?serverVersion=16&charset=utf8"
+  MEILI_HOST: "http://meili:7700"
+  MEILI_KEY: ${MEILI_KEY}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+  JWT_PASSPHRASE: ${JWT_PASSPHRASE}
+
+services:
+  php:
+    build:
+      context: ..
+      dockerfile: docker-dev/Dockerfile
+    container_name: mc_cockpit_php
+    working_dir: /var/www/html
+    volumes:
+      - ../backend:/var/www/html
+      - cockpit_var:/var/www/html/var
+    environment: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    image: nginx:1.27
+    container_name: mc_cockpit_web
+    volumes:
+      - ../frontend/dist:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - php
+    restart: unless-stopped
+    networks:
+      default: {}
+      webnet:
+        aliases:
+          - mc_cockpit_web
+
+  db:
+    image: postgres:16
+    container_name: mc_cockpit_db
+    environment:
+      POSTGRES_DB: cockpit
+      POSTGRES_USER: cockpit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - cockpit_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cockpit -d cockpit"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  meili:
+    image: getmeili/meilisearch:v1.11
+    container_name: mc_cockpit_meili
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_KEY}
+      MEILI_ENV: production
+    volumes:
+      - cockpit_meili:/meili_data
+    restart: unless-stopped
+
+  mailsync:
+    build:
+      context: ..
+      dockerfile: docker-dev/Dockerfile
+    container_name: mc_cockpit_mailsync
+    working_dir: /var/www/html
+    command: sh -c "sleep 15; while true; do php bin/console app:fetch-mail --since-days=3 --limit=40 >/dev/null 2>&1 || true; sleep 90; done"
+    volumes:
+      - ../backend:/var/www/html
+      - cockpit_var:/var/www/html/var
+    environment: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  webnet:
+    external: true
+
+volumes:
+  cockpit_db:
+  cockpit_meili:
+  cockpit_var:
