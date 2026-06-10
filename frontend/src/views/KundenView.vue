@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import api from '../api'
 import { useAuth } from '../stores/auth'
 import AppTopbar from '../components/AppTopbar.vue'
+import Icon from '../components/Icon.vue'
 
 const auth = useAuth()
+const route = useRoute()
 
 interface Field { label: string; value: string }
 interface Contact { id: number; department: string; name: string; email: string | null; phone: string | null }
@@ -88,22 +91,28 @@ async function addCompany() {
   await select(data.id)
 }
 
+watch(() => route.query.company, (v) => { if (v) select(Number(v)) })
 onMounted(async () => {
   if (!auth.me) await auth.fetchMe().catch(() => {})
   await loadList()
+  if (route.query.company) select(Number(route.query.company))
 })
 </script>
 
 <template>
   <div class="h-screen flex flex-col">
-    <AppTopbar>
-      <input v-model="query" placeholder="🔍 Kunden suchen…" class="ml-3 text-[12px] bg-white/10 placeholder-white/50 text-white rounded-lg px-3 py-1 w-56 outline-none" />
-    </AppTopbar>
+    <AppTopbar />
 
     <div class="flex-1 flex min-h-0">
       <!-- Liste -->
       <div class="w-[300px] shrink-0 bg-beige-soft border-r border-[#e6dad6] flex flex-col">
-        <div class="px-3 pt-3 pb-2 text-[10px] uppercase tracking-wider text-neutral-400">Kunden (Hersteller)</div>
+        <div class="px-3 pt-3 pb-2">
+          <div class="text-[10px] uppercase tracking-wider text-neutral-400 mb-1.5">Kunden (Hersteller)</div>
+          <div class="flex items-center gap-1.5 bg-white border border-[#e6dad6] rounded-lg px-2 py-1">
+            <Icon name="search" class="w-3.5 h-3.5 text-neutral-400" />
+            <input v-model="query" placeholder="Filtern…" class="bg-transparent text-[12px] outline-none w-full text-ebony" />
+          </div>
+        </div>
         <div class="overflow-y-auto flex-1 px-2.5 pb-2.5">
           <div v-for="c in filtered" :key="c.id" @click="select(c.id)"
             class="mb-2.5 bg-white border rounded-xl p-3 shadow-sm hover:shadow-md cursor-pointer"

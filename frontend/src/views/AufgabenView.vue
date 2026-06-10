@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import api from '../api'
 import { useAuth } from '../stores/auth'
 import AppTopbar from '../components/AppTopbar.vue'
+import Icon from '../components/Icon.vue'
 
 const auth = useAuth()
+const route = useRoute()
 
 interface Mailbox { id: number; name: string; email: string; scope: string; mine: boolean }
 interface Conv { id: number; from: string; email: string; subject: string; lastMessageAt: string; messageCount: number; state: string; taskId: number | null; owner: string | null; mailboxName: string; mailboxScope: string }
@@ -174,23 +177,17 @@ function onDrop(col: { type: string; val: string }) {
   else setStatus(t, col.val)
 }
 
+watch(() => route.query.conv, (v) => { if (v) selectConv(Number(v)) })
 onMounted(async () => {
   if (!auth.me) await auth.fetchMe().catch(() => {})
   await loadAll()
+  if (route.query.conv) selectConv(Number(route.query.conv))
 })
 </script>
 
 <template>
   <div class="h-screen flex flex-col">
-    <AppTopbar>
-      <div class="ml-3 flex items-center gap-2 text-[12px]">
-        <div class="flex items-center bg-white/10 rounded-lg p-0.5">
-          <button @click="group = 'person'" class="px-2 py-1 rounded" :class="group === 'person' ? 'bg-white text-navy' : 'text-white/70'">Person</button>
-          <button @click="group = 'status'" class="px-2 py-1 rounded" :class="group === 'status' ? 'bg-white text-navy' : 'text-white/70'">Status</button>
-        </div>
-        <button @click="loadAll" class="text-white/70 hover:text-white">⟳ Aktualisieren</button>
-      </div>
-    </AppTopbar>
+    <AppTopbar />
 
     <div class="flex-1 flex min-h-0">
       <!-- Posteingang -->
@@ -237,9 +234,14 @@ onMounted(async () => {
 
       <!-- Board -->
       <div class="flex-1 min-w-0 flex flex-col">
-        <div class="px-5 pt-3 pb-2 flex items-center gap-3">
-          <span class="text-[10px] uppercase tracking-wider text-neutral-400">Aufgaben — nach {{ group === 'person' ? 'Person' : 'Status' }}</span>
-          <button @click="showDone = !showDone" class="text-[10px] px-2 py-0.5 rounded" :class="showDone ? 'bg-navy text-white' : 'bg-white text-neutral-500 border border-[#e6dad6]'">{{ showDone ? 'erledigte ausblenden' : 'erledigte zeigen' }}</button>
+        <div class="px-5 pt-3 pb-2 flex items-center gap-2">
+          <span class="text-[10px] uppercase tracking-wider text-neutral-400 mr-1">Aufgaben</span>
+          <div class="flex items-center bg-beige rounded-lg p-0.5">
+            <button @click="group = 'person'" class="text-[11px] px-2.5 py-0.5 rounded" :class="group === 'person' ? 'bg-white text-navy shadow-sm font-medium' : 'text-neutral-500'">Person</button>
+            <button @click="group = 'status'" class="text-[11px] px-2.5 py-0.5 rounded" :class="group === 'status' ? 'bg-white text-navy shadow-sm font-medium' : 'text-neutral-500'">Status</button>
+          </div>
+          <button @click="showDone = !showDone" class="text-[11px] px-2 py-0.5 rounded" :class="showDone ? 'bg-navy text-white' : 'bg-white text-neutral-500 border border-[#e6dad6]'">{{ showDone ? 'erledigte ausblenden' : 'erledigte zeigen' }}</button>
+          <button @click="loadAll" title="Aktualisieren" class="ml-auto w-7 h-7 grid place-items-center rounded-lg text-neutral-500 hover:bg-beige"><Icon name="refresh" class="w-4 h-4" /></button>
         </div>
         <div class="flex-1 overflow-x-auto px-5 pb-4">
           <div class="flex gap-4 h-full">

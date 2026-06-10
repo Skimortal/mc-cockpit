@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../stores/auth'
 import Icon from './Icon.vue'
+import GlobalSearch from './GlobalSearch.vue'
 
 const auth = useAuth()
 const route = useRoute()
@@ -20,7 +21,9 @@ function logout() {
 
 <template>
   <header class="bg-navy text-white flex items-center gap-2 px-4 py-2 shrink-0 shadow-md">
-    <img src="/most-weiss.png" class="h-5 mr-2" alt="MOST Connect" />
+    <RouterLink to="/aufgaben" title="Zu den Aufgaben">
+      <img src="/most-weiss.png" class="h-5 mr-1" alt="MOST Connect" />
+    </RouterLink>
 
     <nav class="flex items-center gap-1">
       <RouterLink to="/aufgaben" class="flex items-center gap-1.5 text-[13px] px-3 py-1.5 rounded-lg transition"
@@ -33,9 +36,11 @@ function logout() {
       </RouterLink>
     </nav>
 
-    <slot />
+    <div class="flex-1 flex justify-center px-3">
+      <GlobalSearch class="w-full max-w-md" />
+    </div>
 
-    <div class="ml-auto flex items-center gap-1.5">
+    <div class="flex items-center gap-1.5">
       <RouterLink to="/einstellungen" title="Einstellungen"
         class="w-9 h-9 rounded-lg grid place-items-center transition"
         :class="route.path === '/einstellungen' ? 'bg-white/15 text-white' : 'text-white/65 hover:bg-white/10 hover:text-white'">
@@ -46,7 +51,7 @@ function logout() {
 
       <div class="flex items-center gap-2 pl-1">
         <span class="w-7 h-7 rounded-full bg-coral grid place-items-center text-[11px] font-semibold">{{ initials }}</span>
-        <span class="text-[13px] text-white/90 hidden sm:inline">{{ auth.me?.name }}</span>
+        <span class="text-[13px] text-white/90 hidden md:inline">{{ auth.me?.name }}</span>
       </div>
 
       <button @click="logout" title="Abmelden" class="w-9 h-9 rounded-lg grid place-items-center text-white/65 hover:bg-white/10 hover:text-white transition">
