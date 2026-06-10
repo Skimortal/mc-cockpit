@@ -26,17 +26,17 @@ async function submit() {
 
 <template>
   <div class="min-h-screen flex">
-    <!-- Markenpanel (links) -->
-    <div class="hidden md:flex md:w-1/2 lg:w-3/5 bg-navy text-white relative overflow-hidden">
-      <!-- große, dezente Bildmarke -->
-      <img src="/most-mark.png" class="absolute -right-16 -bottom-16 w-[28rem] opacity-10 select-none" alt="" />
-      <div class="relative z-10 flex flex-col justify-between p-12 w-full">
-        <img src="/most-weiss.png" class="h-7 w-auto self-start" alt="MOST Connect" />
+    <!-- Markenpanel (links) mit Startbild von most-connect.com -->
+    <div class="hidden md:block md:w-1/2 lg:w-3/5 relative overflow-hidden">
+      <img src="/login-hero.jpg" class="absolute inset-0 w-full h-full object-cover" alt="" />
+      <div class="absolute inset-0 bg-gradient-to-tr from-navy/90 via-navy/65 to-ebony/30"></div>
+      <div class="relative z-10 flex flex-col justify-between p-12 h-full text-white">
+        <img src="/most-weiss.png" class="h-7 w-auto self-start drop-shadow-lg" alt="MOST Connect" />
         <div>
-          <h2 class="font-head text-[34px] leading-tight tracking-wide">Ein Cockpit.</h2>
-          <p class="text-white/70 text-[15px] mt-3 max-w-sm">Posteingang, Aufgaben und Kunden an einem Ort — nichts fällt mehr durch.</p>
+          <h2 class="font-head text-[36px] leading-tight tracking-wide drop-shadow">Ein Cockpit.</h2>
+          <p class="text-white/85 text-[15px] mt-3 max-w-sm drop-shadow">Posteingang, Aufgaben und Kunden an einem Ort — nichts fällt mehr durch.</p>
         </div>
-        <div class="text-white/40 text-[12px]">MOST Connect KG · Cockpit</div>
+        <div class="text-white/60 text-[12px]">MOST Connect KG · Cockpit</div>
       </div>
     </div>
 
