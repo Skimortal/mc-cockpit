@@ -23,6 +23,7 @@ function logout() {
     </nav>
     <slot />
     <div class="ml-auto flex items-center gap-3 text-[13px]">
+      <RouterLink to="/einstellungen" class="hover:opacity-100" :class="route.path === '/einstellungen' ? 'text-white font-semibold' : 'text-white/75'">⚙ Einstellungen</RouterLink>
       <span class="opacity-90">{{ auth.me?.name }}</span>
       <button @click="logout" class="opacity-70 hover:opacity-100">Abmelden</button>
     </div>
