@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import api from '../api'
 import { useAuth } from '../stores/auth'
 import AppTopbar from '../components/AppTopbar.vue'
@@ -86,11 +86,23 @@ async function loadInbox() {
 async function loadBoard() {
   tasks.value = (await api.get('/api/board')).data
 }
+function selectMailbox(id: string) {
+  if (mailboxFilter.value === id) return
+  mailboxFilter.value = id
+  selConvId.value = null
+  detail.value = null
+  loadInbox()
+}
 async function loadAll() {
   loading.value = true
   const [mb, tm] = await Promise.all([api.get('/api/mailboxes'), api.get('/api/team')])
   mailboxes.value = mb.data
   team.value = tm.data
+  // Immer genau ein Postfach gewählt (kein „Alle") – Standard: Team-Postfach, sonst erstes.
+  if (!mailboxes.value.find((m) => String(m.id) === mailboxFilter.value)) {
+    const def = mailboxes.value[0]
+    mailboxFilter.value = def ? String(def.id) : ''
+  }
   await Promise.all([loadInbox(), loadBoard()])
   loading.value = false
 }
@@ -162,7 +174,6 @@ function onDrop(col: { type: string; val: string }) {
   else setStatus(t, col.val)
 }
 
-watch(mailboxFilter, loadInbox)
 onMounted(async () => {
   if (!auth.me) await auth.fetchMe().catch(() => {})
   await loadAll()
@@ -186,10 +197,10 @@ onMounted(async () => {
       <div class="w-[330px] shrink-0 bg-beige-soft border-r border-[#e6dad6] flex flex-col">
         <!-- Postfach-Switcher -->
         <div class="px-2.5 pt-2.5 pb-1.5 flex flex-wrap gap-1 border-b border-[#ece1dc]">
-          <button @click="mailboxFilter = ''" class="text-[11px] px-2 py-1 rounded" :class="mailboxFilter === '' ? 'bg-navy text-white' : 'text-neutral-500 hover:bg-beige'">Alle</button>
-          <button v-for="m in mailboxes" :key="m.id" @click="mailboxFilter = String(m.id)"
+          <button v-for="m in mailboxes" :key="m.id" @click="selectMailbox(String(m.id))"
             class="text-[11px] px-2 py-1 rounded flex items-center gap-1"
-            :class="mailboxFilter === String(m.id) ? 'bg-navy text-white' : 'text-neutral-500 hover:bg-beige'">
+            :class="mailboxFilter === String(m.id) ? 'bg-navy text-white' : 'text-neutral-500 hover:bg-beige'"
+            :title="m.email">
             <span class="w-1.5 h-1.5 rounded-full" :style="m.scope === 'global' ? 'background:#414c65' : 'background:#eb5d4f'"></span>
             {{ m.name }}
           </button>
