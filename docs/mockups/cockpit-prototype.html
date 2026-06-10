@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MOST Connect Cockpit — Interaktiver Prototyp (Variante B)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Archivo+Black&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+tailwind.config={theme:{extend:{colors:{
+  coral:'#eb5d4f',navy:'#414c65',beige:'#dcd1d0',ebony:'#191118',grau:'#4e4d4c',sage:'#9d9c87',lime2:'#d0cc5a',
+  'beige-soft':'#faf6f4'
+},fontFamily:{head:['"Archivo Black"','sans-serif'],sans:['Inter','sans-serif']}}}}
+</script>
+<style>
+body{font-family:Inter,system-ui,sans-serif}
+.badge{font-size:10px;padding:2px 6px;border-radius:5px;font-weight:500}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#cbb;border-radius:4px}
+.flash{animation:flash 1.2s ease}@keyframes flash{0%{background:#eb5d4f33}100%{background:transparent}}
+.toast{animation:pop .25s ease}@keyframes pop{from{transform:translateY(8px);opacity:0}to{transform:translateY(0);opacity:1}}
+button{cursor:pointer}
+</style>
+</head>
+<body class="bg-beige">
+
+<div id="app"></div>
+<div id="toast" class="fixed bottom-4 right-4 z-50"></div>
+
+<script>
+// ---------------- STATE ----------------
+const TAGS = ['Ausschreibung','Muster','Reklamation','Labor','Logistik','Rechnung','Etikett','ASN','Allgemein'];
+const PEOPLE = ['Aleksandar','Mirjana','Ljubisa'];
+let UID = 100;
+
+const state = {
+  selConv: null, group:'person', query:'', replyText:'', commentText:'', showDone:false,
+  inboxFilter:'alle',
+  convs: [
+    { id:1, from:'Hofer SI · J. Janušič', email:'bpet@hofer.si', subj:'Mehraufwand-Verrechnung PO 4529979330', time:'09:14', unread:false, state:'aufgabe', taskId:11,
+      thread:[{dir:'in',who:'J. Janušič (Hofer SI)',time:'09:14',body:'Sehr geehrte Damen und Herren,\nfür PO 4529979330 müssen wir einen Mehraufwand von EUR 25 verrechnen (manuelle ASN-Erfassung). Bitte um Kenntnisnahme.'}]},
+    { id:2, from:'Aldi Süd · Stockmann', email:'stockmann@aldi-sued.de', subj:'Adresse und Kontaktdaten Tray (Etikett)', time:'08:02', unread:true, state:'neu', taskId:null,
+      thread:[{dir:'in',who:'F. Stockmann (Aldi Süd)',time:'08:02',body:'Hallo,\nbitte das Tray-Etikett für Aldi Süd DE anpassen: neue Adresse + Kontaktdaten. Wir brauchen die finale Version bis 12.08.'}]},
+    { id:3, from:'Hofer · QM-Abteilung', email:'qm@hofer.at', subj:'Notification of Required QM Inspection — 700000060858', time:'Mo', unread:true, state:'neu', taskId:null,
+      thread:[{dir:'in',who:'HOFER QM',time:'Mo 14:20',body:'A QM inspection is required for article Premium Pudding 3er (Hofer #700000060858). Please arrange and confirm.'}]},
+    { id:4, from:'office@hdv-stojakovic', email:'office@hdv-stojakovic.at', subj:'PPWR-Kennzeichnung Bakery / Pantry', time:'Gestern', unread:false, state:'aufgabe', taskId:12,
+      thread:[{dir:'in',who:'office@',time:'Gestern',body:'Aleks, bzgl. PPWR-Kennzeichnung auf den Displaykartons – das müssen wir mit Bakery und Pantry abklären.'}]},
+    { id:5, from:'Mirjana Stojakovic', email:'mirjana@hdv-stojakovic.at', subj:'Claud racuni (Rechnungen)', time:'Mo', unread:false, state:'erledigt', taskId:6,
+      thread:[{dir:'in',who:'Mirjana',time:'Mo',body:'Aleks u prilogu su racuni za Claud. LP'},{dir:'out',who:'Wir',time:'Mo',body:'Danke, geprüft und abgelegt.'}]},
+  ],
+  tasks: [
+    { id:11, convId:1, title:'Widerspruch Mehraufwand PO 4529979330 (Hofer SI) nachverfolgen', summary:'Hofer SI besteht auf 25 € Mehraufwand (manuelle ASN). Widerspruch + Bestätigung Fr. Wittmann nötig.', tag:'ASN', prio:'Hoch', due:null, owner:'Mirjana', status:'open', tags:['ASN','Reklamation'], comments:[{who:'Aleksandar',time:'09:30',text:'Hattest du nicht die Mail von Fr. Wittmann dazu?'}] },
+    { id:12, convId:4, title:'PPWR-Kennzeichnung auf Displaykartons klären', summary:'Kennzeichnungspflicht auf Display-/Transportkartons mit Bakery & Pantry abstimmen.', tag:'Allgemein', prio:'Hoch', due:null, owner:'Mirjana', status:'in_progress', tags:['Allgemein'], comments:[] },
+    { id:6, convId:5, title:'Claud-Rechnungen prüfen und ablegen', summary:'Eingegangene Rechnungen für Claud prüfen.', tag:'Rechnung', prio:'Normal', due:null, owner:'Aleksandar', status:'done', tags:['Rechnung'], comments:[] },
+  ],
+};
+
+// canned AI triage per conversation (für "→ Aufgabe")
+const AITRIAGE = {
+  2:{title:'Tray-Etikett für Aldi Süd DE anpassen (Adresse + Kontakt)', summary:'Aldi Süd verlangt neue Adresse/Kontaktdaten auf dem Tray-Etikett, final bis 12.08.', tag:'Etikett', prio:'Hoch', due:'12.08.', owner:null},
+  3:{title:'QM-Inspektion Premium Pudding 3er einleiten (Hofer #7000…858)', summary:'Hofer fordert QM-Prüfung für Premium Pudding 3er; Termin organisieren und bestätigen.', tag:'Labor', prio:'Hoch', due:null, owner:null},
+};
+const AIDRAFT = {
+  1:'Sehr geehrter Herr Janušič,\n\nwir haben Ihre Mehraufwand-Verrechnung zu PO 4529979330 erhalten. Aus unserer Sicht lag ein Manhattan-Systemfehler vor; eine Bestätigung von Frau Wittmann (HOFER-Lager) reichen wir nach. Wir bitten daher, die 25 € vorerst auszusetzen.\n\nMit freundlichen Grüßen\nMOST Connect KG',
+  2:'Sehr geehrter Herr Stockmann,\n\nbesten Dank für die Angaben. Wir passen das Tray-Etikett mit der neuen Adresse und den Kontaktdaten an und senden Ihnen die finale Version rechtzeitig vor dem 12.08.\n\nMit freundlichen Grüßen\nMOST Connect KG',
+  3:'Dear QM team,\n\nthank you for the notification regarding Premium Pudding 3er (#700000060858). We will arrange the required QM inspection and confirm the date shortly.\n\nKind regards\nMOST Connect KG',
+  4:'Hallo,\n\nzur PPWR-Kennzeichnung auf den Displaykartons stimme ich mich mit Bakery und Pantry ab und melde mich mit dem Ergebnis.\n\nLG',
+};
+const NEWMAILS = [
+  {from:'Bilacon Labor', email:'labor@bilacon.de', subj:'Laborbericht Ketchup 1,4 kg – Befund', body:'Anbei der Laborbericht zur Charge Ketchup 1,4 kg. Ein Parameter liegt knapp über dem Richtwert – bitte um Rückmeldung.', tag:'Labor', title:'Laborbefund Ketchup 1,4 kg prüfen (Bilacon)', summary:'Bilacon meldet einen Parameter knapp über Richtwert – Bewertung + Rückmeldung nötig.', prio:'Hoch'},
+  {from:'Aldi Nord · Einkauf', email:'einkauf@aldi-nord.de', subj:'Ausschreibung Premium Pudding 3er Q3', body:'Sehr geehrte Damen und Herren, wir laden Sie zur Ausschreibung Premium Pudding 3er (Q3) ein. Abgabe über Ariba bis 28.08.', tag:'Ausschreibung', title:'Ausschreibung Premium Pudding 3er Q3 (Aldi Nord) – Angebot bis 28.08.', summary:'Aldi Nord lädt zur Ariba-Ausschreibung Premium Pudding 3er Q3; Abgabe bis 28.08.', prio:'Hoch'},
+];
+let newMailIdx = 0;
+
+// ---------------- HELPERS ----------------
+const BADGE = {Etikett:'background:#eb5d4f;color:#fff',Labor:'background:#9d9c87;color:#fff',ASN:'background:#414c65;color:#fff',Muster:'background:#d0cc5a;color:#191118',Rechnung:'background:#4e4d4c;color:#fff',Ausschreibung:'background:#eb5d4f;color:#fff',Reklamation:'background:#eb5d4f22;color:#b23b2e',Logistik:'background:#414c6522;color:#414c65',Allgemein:'background:#e7ddd9;color:#6b5f5a'};
+const STATUS = {open:'Offen',in_progress:'In Arbeit',waiting:'Wartet',done:'Erledigt'};
+const taskOf = c => state.tasks.find(t=>t.id===c.taskId);
+const convOf = t => state.convs.find(c=>c.id===t.convId);
+const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>');
+function toast(msg){const el=document.getElementById('toast');el.innerHTML=`<div class="toast bg-ebony text-white text-sm px-4 py-2 rounded-lg shadow-lg">${msg}</div>`;setTimeout(()=>el.innerHTML='',2200);}
+
+// ---------------- ACTIONS ----------------
+const A = {
+  selConv(id){state.selConv=+id;state.replyText='';state.commentText='';const c=state.convs.find(x=>x.id===+id);if(c)c.unread=false;render();},
+  close(){state.selConv=null;render();},
+  filter(f){state.inboxFilter=f;render();},
+  group(g){state.group=g;render();},
+  toggleDone(){state.showDone=!state.showDone;render();},
+  createTask(){
+    const c=state.convs.find(x=>x.id===state.selConv);if(!c||c.taskId)return;
+    const t=document.getElementById('aiwrap'); if(t)t.innerHTML='<div class="text-coral text-sm py-2">✨ KI fasst zusammen…</div>';
+    setTimeout(()=>{
+      const ai=AITRIAGE[c.id]||{title:c.subj,summary:'(Zusammenfassung)',tag:'Allgemein',prio:'Normal',due:null,owner:null};
+      const id=++UID;
+      state.tasks.push({id,convId:c.id,title:ai.title,summary:ai.summary,tag:ai.tag,prio:ai.prio,due:ai.due,owner:ai.owner,status:'open',tags:[ai.tag],comments:[]});
+      c.taskId=id;c.state='aufgabe';toast('Aufgabe #'+id+' erstellt → Unzugewiesen');render();
+    },750);
+  },
+  assign(v){const c=state.convs.find(x=>x.id===state.selConv);const t=taskOf(c);if(t){t.owner=v||null;toast(v?('Zugewiesen an '+v):'Zuweisung entfernt');render();}},
+  status(s){const c=state.convs.find(x=>x.id===state.selConv);const t=taskOf(c);if(t){t.status=s;if(s==='done'){c.state='erledigt';toast('Erledigt – bleibt per Suche auffindbar');}render();}},
+  toggleTag(tag){const c=state.convs.find(x=>x.id===state.selConv);const t=taskOf(c);if(!t)return;const i=t.tags.indexOf(tag);i>=0?t.tags.splice(i,1):t.tags.push(tag);render();},
+  addComment(){const c=state.convs.find(x=>x.id===state.selConv);const t=taskOf(c);if(!t||!state.commentText.trim())return;t.comments.push({who:'Aleksandar',time:'jetzt',text:state.commentText.trim()});state.commentText='';render();},
+  draft(){const c=state.convs.find(x=>x.id===state.selConv);state.replyText=AIDRAFT[c.id]||'';render();},
+  send(){const c=state.convs.find(x=>x.id===state.selConv);if(!state.replyText.trim())return;c.thread.push({dir:'out',who:'Wir',time:'jetzt',body:state.replyText.trim()});const t=taskOf(c);if(t&&t.status==='open')t.status='waiting';state.replyText='';toast('✉ Gesendet an '+c.email);render();},
+  simulate(){
+    const m=NEWMAILS[newMailIdx%NEWMAILS.length];newMailIdx++;
+    const cid=++UID;const tid=++UID;
+    state.convs.unshift({id:cid,from:m.from,email:m.email,subj:m.subj,time:'jetzt',unread:true,state:'aufgabe',taskId:tid,_new:true,thread:[{dir:'in',who:m.from,time:'jetzt',body:m.body}]});
+    state.tasks.push({id:tid,convId:cid,title:m.title,summary:m.summary,tag:m.tag,prio:m.prio,due:null,owner:null,status:'open',tags:[m.tag],comments:[]});
+    toast('📥 Neue Mail → Auto-Triage → Aufgabe #'+tid+' (Unzugewiesen)');render();
+  },
+};
+
+// ---------------- RENDER ----------------
+function visibleConvs(){
+  let cs=state.convs.slice();
+  if(state.inboxFilter==='ungelesen')cs=cs.filter(c=>c.unread);
+  if(state.inboxFilter==='ohneaufgabe')cs=cs.filter(c=>!c.taskId);
+  if(state.query)cs=cs.filter(c=>(c.from+c.subj).toLowerCase().includes(state.query.toLowerCase()));
+  return cs;
+}
+function chipFor(c){
+  if(c.state==='aufgabe')return `<span class="badge" style="background:#414c6522;color:#414c65">→ Aufgabe #${c.taskId}</span>`;
+  if(c.state==='erledigt')return `<span class="badge" style="background:#e7ddd9;color:#9a8f8a;text-decoration:line-through">erledigt</span>`;
+  return `<span class="badge" style="background:#eb5d4f;color:#fff">Neu</span>`;
+}
+function inboxHTML(){
+  return visibleConvs().map(c=>`
+    <div data-action="selConv" data-id="${c.id}" class="px-3 py-2.5 border-b border-[#ece1dc] hover:bg-beige cursor-pointer ${state.selConv===c.id?'bg-beige':''} ${c._new?'flash':''}">
+      <div class="flex items-center gap-2">
+        ${c.unread?'<span class="w-1.5 h-1.5 rounded-full bg-coral shrink-0"></span>':'<span class="w-1.5 h-1.5 shrink-0"></span>'}
+        <span class="text-[13px] text-navy font-semibold truncate">${c.from}</span>
+        <span class="ml-auto text-[10px] text-neutral-400 shrink-0">${c.time}</span>
+      </div>
+      <div class="flex items-center gap-2 mt-0.5 pl-3.5">
+        <span class="text-[12px] text-neutral-600 truncate">${c.subj}</span>
+        <span class="ml-auto text-[10px] text-neutral-400 shrink-0">✉ ${c.thread.length}</span>
+      </div>
+      <div class="mt-1 pl-3.5 flex items-center gap-2">${chipFor(c)}${c.taskId&&taskOf(c)&&taskOf(c).owner?`<span class="text-[10px] text-neutral-400">· ${taskOf(c).owner}</span>`:''}</div>
+    </div>`).join('') || '<div class="text-xs text-neutral-400 p-4">Keine Mails in diesem Filter.</div>';
+}
+function cardHTML(t){
+  const c=convOf(t);
+  return `<div data-action="selConv" data-id="${t.convId}" class="bg-white border border-[#e6dad6] rounded-xl p-2.5 shadow-sm hover:shadow-md cursor-pointer">
+    <div class="flex items-center gap-1.5 mb-1.5">
+      <span class="badge" style="${BADGE[t.tag]||BADGE.Allgemein}">${t.tag}</span>
+      ${t.prio==='Hoch'?'<span class="badge" style="background:#eb5d4f;color:#fff">Hoch</span>':''}
+      ${t.due?`<span class="ml-auto text-[10px] text-neutral-400">⏱ ${t.due}</span>`:''}
+    </div>
+    <div class="text-[12.5px] leading-snug text-ebony">${t.title}</div>
+    <div class="mt-1.5 flex items-center justify-between"><span class="text-[10px] text-neutral-400">${c?c.from:''}</span>
+      ${t.owner?`<span class="badge" style="background:#eb5d4f22;color:#b23b2e">${t.owner}</span>`:'<span class="text-[10px] text-coral italic">unzugewiesen</span>'}</div>
+  </div>`;
+}
+function boardHTML(){
+  const active=state.tasks.filter(t=>t.status!=='done'||state.showDone);
+  let groups;
+  if(state.group==='person'){
+    groups=[{name:'Unzugewiesen',alarm:true,items:active.filter(t=>!t.owner)}].concat(PEOPLE.map(p=>({name:p,items:active.filter(t=>t.owner===p)})));
+  }else{
+    groups=['open','in_progress','waiting','done'].map(s=>({name:STATUS[s],items:active.filter(t=>t.status===s)}));
+  }
+  return `<div class="flex gap-4 h-full">${groups.map(g=>`
+    <div class="w-56 shrink-0">
+      <div class="flex items-center justify-between mb-2 px-1">
+        <span class="text-[12px] font-semibold ${g.alarm&&g.items.length?'text-coral':'text-navy'}">${g.alarm?'⚠ ':''}${g.name}</span>
+        <span class="text-[10px] px-1.5 rounded-full bg-coral/15 text-coral">${g.items.length}</span>
+      </div>
+      <div class="space-y-2">${g.items.map(cardHTML).join('')||'<div class="text-[11px] text-neutral-400 px-1 py-3">—</div>'}</div>
+    </div>`).join('')}</div>`;
+}
+function detailHTML(){
+  const c=state.convs.find(x=>x.id===state.selConv);
+  if(!c)return `<div class="h-full flex items-center justify-center text-center text-neutral-400 text-sm px-6">Wähle links eine Konversation<br>oder rechts eine Aufgabe.</div>`;
+  const t=taskOf(c);
+  const thread=c.thread.map(m=>`<div class="mb-2">
+    <div class="text-[11px] ${m.dir==='out'?'text-coral':'text-navy'} font-medium">${m.who} · ${m.time}</div>
+    <div class="text-[12px] text-neutral-600 leading-relaxed">${esc(m.body)}</div></div>`).join('');
+  let taskBlock;
+  if(t){
+    taskBlock=`
+    <div class="mt-3 p-3 rounded-xl bg-white border border-[#e6dad6]">
+      <div class="text-[13px] font-semibold text-ebony">${t.title}</div>
+      <div class="mt-1 p-2 rounded-lg bg-coral/10 text-[12px] text-[#8a3328]"><b>KI:</b> ${t.summary}</div>
+      <div class="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+        <span class="text-neutral-500">Zuständig:</span>
+        <select data-action="assign" class="border border-[#e0d2cd] rounded-lg px-2 py-1 text-[11px] bg-white">
+          <option value="" ${!t.owner?'selected':''}>— Unzugewiesen —</option>
+          ${PEOPLE.map(p=>`<option ${t.owner===p?'selected':''}>${p}</option>`).join('')}
+        </select>
+      </div>
+      <div class="mt-2 flex items-center gap-1">
+        ${['open','in_progress','waiting','done'].map(s=>`<button data-action="status" data-id="${s}" class="text-[10px] px-2 py-1 rounded-lg ${t.status===s?'bg-coral text-white':'bg-beige-soft text-neutral-600 border border-[#e6dad6]'}">${STATUS[s]}</button>`).join('')}
+      </div>
+      <div class="mt-3"><div class="text-[10px] uppercase tracking-wide text-neutral-400 mb-1">Tags</div>
+        <div class="flex flex-wrap gap-1">${TAGS.map(tag=>`<button data-action="tag" data-id="${tag}" class="badge" style="${t.tags.includes(tag)?BADGE[tag]||BADGE.Allgemein:'background:#f0e7e3;color:#b7a9a3'}">${tag}</button>`).join('')}</div>
+      </div>
+      <div class="mt-3"><div class="text-[10px] uppercase tracking-wide text-neutral-400 mb-1">Kommentare</div>
+        ${t.comments.map(k=>`<div class="text-[11px] mb-1"><span class="font-semibold text-navy">${k.who}</span> <span class="text-neutral-400">${k.time}</span><br><span class="text-neutral-600">${esc(k.text)}</span></div>`).join('')||'<div class="text-[11px] text-neutral-400">—</div>'}
+        <div class="flex gap-1 mt-1">
+          <input id="commentBox" value="${(state.commentText||'').replace(/"/g,'&quot;')}" placeholder="Kommentar…" class="flex-1 border border-[#e0d2cd] rounded-lg px-2 py-1 text-[11px]">
+          <button data-action="addComment" class="text-[11px] px-2 py-1 rounded-lg bg-navy text-white">+</button>
+        </div>
+      </div>
+    </div>`;
+  } else {
+    taskBlock=`<div id="aiwrap" class="mt-3"><button data-action="createTask" class="w-full py-2.5 rounded-xl bg-coral text-white text-sm font-medium hover:bg-[#d9503f]">✨ In Aufgabe umwandeln</button>
+      <div class="text-[11px] text-neutral-400 text-center mt-1">KI erzeugt Titel + Kurzbeschreibung</div></div>`;
+  }
+  return `
+    <div class="px-4 py-3 border-b border-[#e6dad6] flex items-start gap-2">
+      <div><div class="text-[14px] font-semibold text-navy leading-tight">${c.subj}</div>
+        <div class="text-[11px] text-neutral-400 mt-0.5">${c.from} · ${c.email}</div></div>
+      <button data-action="close" class="ml-auto text-neutral-400 text-xl leading-none">×</button>
+    </div>
+    <div class="px-4 py-3 overflow-y-auto flex-1">
+      <div class="text-[10px] uppercase tracking-wide text-neutral-400 mb-1">Verlauf (${c.thread.length})</div>
+      ${thread}
+      ${taskBlock}
+    </div>
+    <div class="px-4 py-3 border-t border-[#e6dad6] bg-beige-soft">
+      <div class="flex items-center justify-between mb-1.5">
+        <span class="text-[12px] font-semibold text-navy">Antwort an ${c.from}</span>
+        <button data-action="draft" class="text-[11px] px-2 py-1 rounded-lg bg-coral/15 text-coral">✨ KI-Entwurf</button>
+      </div>
+      <textarea id="replyBox" rows="4" placeholder="Antwort schreiben oder KI-Entwurf holen…" class="w-full border border-[#e0d2cd] rounded-lg px-3 py-2 text-[12px] bg-white">${esc(state.replyText).replace(/<br>/g,'\n')}</textarea>
+      <div class="mt-1.5 flex justify-end"><button data-action="send" class="text-[12px] px-3 py-1.5 rounded-lg bg-coral text-white font-medium">Senden</button></div>
+    </div>`;
+}
+function render(){
+  document.getElementById('app').innerHTML=`
+  <div class="h-screen flex flex-col bg-beige">
+    <!-- Topbar -->
+    <div class="bg-navy text-white flex items-center gap-3 px-5 py-2.5">
+      <img src="assets/most-weiss.png" class="h-5" alt="MOST">
+      <span class="text-[12px] opacity-60">Cockpit</span>
+      <input value="${state.query.replace(/"/g,'&quot;')}" data-action="search" placeholder="🔍 Suchen (auch erledigte)…" class="ml-3 text-[12px] bg-white/10 placeholder-white/50 text-white rounded-lg px-3 py-1 w-56 outline-none">
+      <div class="ml-auto flex items-center gap-3 text-[12px]">
+        <div class="flex items-center bg-white/10 rounded-lg p-0.5">
+          <button data-action="group" data-id="person" class="px-2 py-1 rounded ${state.group==='person'?'bg-white text-navy':'text-white/70'}">Person</button>
+          <button data-action="group" data-id="status" class="px-2 py-1 rounded ${state.group==='status'?'bg-white text-navy':'text-white/70'}">Status</button>
+        </div>
+        <button data-action="simulate" class="px-2 py-1 rounded-lg bg-coral text-white">📥 Neue Mail</button>
+        <span class="opacity-90">Aleksandar ▾</span>
+      </div>
+    </div>
+    <!-- Split -->
+    <div class="flex-1 flex min-h-0">
+      <div class="w-[330px] shrink-0 bg-beige-soft border-r border-[#e6dad6] flex flex-col">
+        <div class="px-3 pt-3 pb-2 flex items-center gap-1 text-[11px]">
+          ${[['alle','Alle'],['ungelesen','Ungelesen'],['ohneaufgabe','ohne Aufgabe']].map(([k,l])=>`<button data-action="filter" data-id="${k}" class="px-2 py-1 rounded ${state.inboxFilter===k?'bg-coral text-white':'text-neutral-500 hover:bg-beige'}">${l}</button>`).join('')}
+        </div>
+        <div class="px-3 pb-1 text-[10px] uppercase tracking-wider text-neutral-400">Posteingang</div>
+        <div class="overflow-y-auto flex-1">${inboxHTML()}</div>
+      </div>
+      <div class="flex-1 min-w-0 flex flex-col">
+        <div class="px-5 pt-3 pb-2 flex items-center gap-3">
+          <span class="text-[10px] uppercase tracking-wider text-neutral-400">Aufgaben — nach ${state.group==='person'?'Person':'Status'}</span>
+          <button data-action="toggleDone" class="text-[10px] px-2 py-0.5 rounded ${state.showDone?'bg-navy text-white':'bg-white text-neutral-500 border border-[#e6dad6]'}">${state.showDone?'erledigte ausblenden':'erledigte zeigen'}</button>
+        </div>
+        <div class="flex-1 overflow-x-auto px-5 pb-4">${boardHTML()}</div>
+      </div>
+      <div class="w-[360px] shrink-0 bg-white border-l border-[#e6dad6] flex flex-col">${detailHTML()}</div>
+    </div>
+  </div>`;
+}
+
+// ---------------- EVENTS ----------------
+document.addEventListener('click',e=>{const el=e.target.closest('[data-action]');if(!el)return;const a=el.dataset.action,id=el.dataset.id;
+  if(a==='selConv')A.selConv(id); else if(a==='close')A.close(); else if(a==='filter')A.filter(id);
+  else if(a==='group')A.group(id); else if(a==='toggleDone')A.toggleDone(); else if(a==='createTask')A.createTask();
+  else if(a==='status')A.status(id); else if(a==='tag')A.toggleTag(id); else if(a==='addComment')A.addComment();
+  else if(a==='draft')A.draft(); else if(a==='send')A.send(); else if(a==='simulate')A.simulate();
+});
+document.addEventListener('change',e=>{const el=e.target.closest('[data-action="assign"]');if(el)A.assign(el.value);});
+document.addEventListener('input',e=>{if(e.target.id==='replyBox')state.replyText=e.target.value;if(e.target.id==='commentBox')state.commentText=e.target.value;if(e.target.dataset&&e.target.dataset.action==='search'){state.query=e.target.value;render();const s=document.querySelector('[data-action="search"]');if(s){s.focus();s.setSelectionRange(s.value.length,s.value.length);}}});
+render();
+</script>
+</body>
+</html>
