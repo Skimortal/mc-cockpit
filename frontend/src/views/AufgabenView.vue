@@ -43,6 +43,8 @@ const converting = ref(false)
 const dragId = ref<number | null>(null)
 
 const selTask = computed(() => tasks.value.find((t) => t.conversationId === selConvId.value) || null)
+// Konversation neueste zuerst (Original-Index für Auf-/Zuklappen beibehalten)
+const orderedMsgs = computed(() => (detail.value?.messages || []).map((m, i) => ({ m, i })).reverse())
 
 function fmtDate(s: string): string {
   // "2026-06-08 14:20" -> "08.06. 14:20"
@@ -272,22 +274,8 @@ onMounted(async () => {
           </div>
 
           <div class="px-4 py-3 overflow-y-auto flex-1">
-            <!-- Thread -->
-            <div class="text-[10px] uppercase tracking-wide text-neutral-400 mb-1.5">Konversation · {{ detail.messages.length }} Nachricht(en)</div>
-            <div v-for="(m, i) in detail.messages" :key="i" class="border rounded-lg mb-2 overflow-hidden" :class="m.dir === 'out' ? 'border-coral/30' : 'border-[#e6dad6]'">
-              <div @click="toggleMsg(i)" class="flex items-center gap-2 px-3 py-2 cursor-pointer" :class="m.dir === 'out' ? 'bg-coral/5' : 'bg-beige-soft'">
-                <span class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold shrink-0 text-white" :style="m.dir === 'out' ? 'background:#eb5d4f' : 'background:#414c65'">{{ m.dir === 'out' ? '✓' : (m.who || '?').slice(0, 2).toUpperCase() }}</span>
-                <div class="min-w-0 flex-1">
-                  <div class="text-[12px] font-semibold leading-tight" :class="m.dir === 'out' ? 'text-coral' : 'text-navy'">{{ m.dir === 'out' ? 'Wir' : m.who }}</div>
-                  <div v-if="!openMsgs.has(i)" class="text-[11px] text-neutral-400 truncate">{{ m.body.slice(0, 80) }}</div>
-                </div>
-                <span class="text-[10px] text-neutral-400 shrink-0">{{ m.time.slice(5, 16) }}</span>
-              </div>
-              <div v-if="openMsgs.has(i)" class="px-3 py-2.5 text-[12.5px] text-neutral-700 leading-relaxed whitespace-pre-wrap border-t" :class="m.dir === 'out' ? 'border-coral/20' : 'border-[#efe4df]'">{{ m.body }}</div>
-            </div>
-
-            <!-- Aufgabe -->
-            <div v-if="selTask" class="mt-3 p-3 rounded-xl bg-beige-soft border border-[#e6dad6]">
+            <!-- Aufgabe + KI-Zusammenfassung ganz oben -->
+            <div v-if="selTask" class="p-3 rounded-xl bg-beige-soft border border-[#e6dad6]">
               <div class="text-[13px] font-semibold text-ebony">{{ selTask.title }}</div>
               <div v-if="selTask.aiSummary" class="mt-1 p-2 rounded-lg bg-coral/10 text-[12px] text-[#8a3328]"><b>KI:</b> {{ selTask.aiSummary }}</div>
               <div class="mt-2 flex items-center gap-2 text-[11px]">
@@ -319,8 +307,22 @@ onMounted(async () => {
                 </div>
               </div>
             </div>
-            <div v-else class="mt-3">
+            <div v-else>
               <button @click="convertToTask" :disabled="converting" class="w-full py-2.5 rounded-xl bg-coral text-white text-sm font-medium hover:bg-coral-dark disabled:opacity-50">{{ converting ? '✨ KI fasst zusammen…' : '✨ In Aufgabe umwandeln' }}</button>
+            </div>
+
+            <!-- Konversation, neueste zuerst -->
+            <div class="mt-4 text-[10px] uppercase tracking-wide text-neutral-400 mb-1.5">Konversation · {{ detail.messages.length }} Nachricht(en) · neueste zuerst</div>
+            <div v-for="x in orderedMsgs" :key="x.i" class="border rounded-lg mb-2 overflow-hidden" :class="x.m.dir === 'out' ? 'border-coral/30' : 'border-[#e6dad6]'">
+              <div @click="toggleMsg(x.i)" class="flex items-center gap-2 px-3 py-2 cursor-pointer" :class="x.m.dir === 'out' ? 'bg-coral/5' : 'bg-beige-soft'">
+                <span class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold shrink-0 text-white" :style="x.m.dir === 'out' ? 'background:#eb5d4f' : 'background:#414c65'">{{ x.m.dir === 'out' ? '✓' : (x.m.who || '?').slice(0, 2).toUpperCase() }}</span>
+                <div class="min-w-0 flex-1">
+                  <div class="text-[12px] font-semibold leading-tight" :class="x.m.dir === 'out' ? 'text-coral' : 'text-navy'">{{ x.m.dir === 'out' ? 'Wir' : x.m.who }}</div>
+                  <div v-if="!openMsgs.has(x.i)" class="text-[11px] text-neutral-400 truncate">{{ x.m.body.slice(0, 80) }}</div>
+                </div>
+                <span class="text-[10px] text-neutral-400 shrink-0">{{ fmtDate(x.m.time) }}</span>
+              </div>
+              <div v-if="openMsgs.has(x.i)" class="px-3 py-2.5 text-[12.5px] text-neutral-700 leading-relaxed whitespace-pre-wrap border-t" :class="x.m.dir === 'out' ? 'border-coral/20' : 'border-[#efe4df]'">{{ x.m.body }}</div>
             </div>
           </div>
 
