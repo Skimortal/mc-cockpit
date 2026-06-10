@@ -3,9 +3,11 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import api from '../api'
 import { useAuth } from '../stores/auth'
 import AppTopbar from '../components/AppTopbar.vue'
+import Icon from '../components/Icon.vue'
 
 const auth = useAuth()
 const isAdmin = computed(() => auth.me?.roles?.includes('ROLE_ADMIN') ?? false)
+const tab = ref<'mailboxes' | 'users'>('mailboxes')
 
 interface MB { id: number; name: string; email: string; scope: string; owner: { id: number; name: string } | null; imapHost: string; imapPort: number; imapEncryption: string; smtpHost: string; smtpPort: number; smtpEncryption: string; username: string; active: boolean; hasPassword: boolean }
 interface UserRow { id: number; email: string; firstName: string; lastName: string; name: string; isAdmin: boolean }
@@ -15,26 +17,17 @@ const users = ref<UserRow[]>([])
 const personalBoxes = computed(() => mailboxes.value.filter((m) => m.scope === 'personal'))
 const globalBoxes = computed(() => mailboxes.value.filter((m) => m.scope === 'global'))
 
-// ---- Postfach-Formular ----
 const showForm = ref(false)
 const formId = ref<number | null>(null)
 const form = reactive<any>({})
 function blankForm(scope: string) {
   return { scope, name: '', email: '', imapHost: 'mail.world4you.com', imapPort: 993, imapEncryption: 'ssl', smtpHost: 'smtp.world4you.com', smtpPort: 587, smtpEncryption: 'tls', username: '', password: '', active: true }
 }
-function openNew(scope: string) {
-  formId.value = null
-  Object.assign(form, blankForm(scope))
-  showForm.value = true
-}
-function openEdit(m: MB) {
-  formId.value = m.id
-  Object.assign(form, { ...m, password: '' })
-  showForm.value = true
-}
+function openNew(scope: string) { formId.value = null; Object.assign(form, blankForm(scope)); showForm.value = true }
+function openEdit(m: MB) { formId.value = m.id; Object.assign(form, { ...m, password: '' }); showForm.value = true }
 async function saveForm() {
   const body = { ...form }
-  if (!body.password) delete body.password // Passwort nur bei Eingabe ändern
+  if (!body.password) delete body.password
   if (formId.value) await api.patch(`/api/mailboxes/${formId.value}`, body)
   else await api.post('/api/mailboxes', body)
   showForm.value = false
@@ -46,7 +39,6 @@ async function delMailbox(m: MB) {
   await loadMailboxes()
 }
 
-// ---- Benutzer ----
 const showUserForm = ref(false)
 const userForm = reactive<any>({ email: '', firstName: '', lastName: '', password: '', admin: false })
 async function saveUser() {
@@ -56,10 +48,7 @@ async function saveUser() {
   showUserForm.value = false
   await loadUsers()
 }
-async function toggleAdmin(u: UserRow) {
-  await api.patch(`/api/users/${u.id}`, { admin: !u.isAdmin })
-  await loadUsers()
-}
+async function toggleAdmin(u: UserRow) { await api.patch(`/api/users/${u.id}`, { admin: !u.isAdmin }); await loadUsers() }
 async function resetPw(u: UserRow) {
   const pw = prompt(`Neues Passwort für ${u.name}`)
   if (pw) { await api.patch(`/api/users/${u.id}`, { password: pw }); alert('Passwort gesetzt.') }
@@ -83,85 +72,102 @@ onMounted(async () => {
 <template>
   <div class="h-screen flex flex-col">
     <AppTopbar />
-    <div class="flex-1 overflow-y-auto">
-      <div class="max-w-3xl mx-auto px-6 py-6">
-        <h1 class="font-head text-[20px] text-ebony tracking-wide mb-1">Einstellungen</h1>
+    <div class="flex-1 flex min-h-0">
+      <!-- Unter-Navigation -->
+      <aside class="w-56 shrink-0 bg-beige-soft border-r border-[#e6dad6] p-3">
+        <div class="text-[10px] uppercase tracking-wider text-neutral-400 px-2 mb-2">Einstellungen</div>
+        <button @click="tab = 'mailboxes'" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] mb-1 transition"
+          :class="tab === 'mailboxes' ? 'bg-white text-navy font-semibold shadow-sm' : 'text-neutral-500 hover:bg-beige'">
+          <Icon name="envelope" class="w-4 h-4" /> Postfächer
+        </button>
+        <button v-if="isAdmin" @click="tab = 'users'" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] transition"
+          :class="tab === 'users' ? 'bg-white text-navy font-semibold shadow-sm' : 'text-neutral-500 hover:bg-beige'">
+          <Icon name="users" class="w-4 h-4" /> Benutzer
+        </button>
+      </aside>
 
-        <!-- Meine Postfächer -->
-        <section class="mt-5">
-          <div class="flex items-center justify-between">
-            <h2 class="text-[13px] uppercase tracking-wider text-neutral-500">Meine Postfächer</h2>
-            <button @click="openNew('personal')" class="text-[12px] px-2 py-1 rounded-lg bg-coral text-white">+ Postfach</button>
-          </div>
-          <p class="text-[12px] text-neutral-500 mt-0.5">Nur du siehst diese Postfächer. Aufgaben daraus sieht das ganze Team.</p>
-          <div class="mt-2 space-y-2">
-            <div v-for="m in personalBoxes" :key="m.id" class="bg-white border border-[#e6dad6] rounded-xl p-3 flex items-center gap-3">
-              <span class="w-2 h-2 rounded-full" style="background:#eb5d4f"></span>
-              <div class="min-w-0">
-                <div class="text-[13px] font-semibold text-navy">{{ m.name }}</div>
-                <div class="text-[11px] text-neutral-500">{{ m.email }} · IMAP {{ m.imapHost }}:{{ m.imapPort }} · {{ m.hasPassword ? 'Passwort gesetzt' : 'kein Passwort' }} · {{ m.active ? 'aktiv' : 'inaktiv' }}</div>
+      <!-- Inhalt -->
+      <div class="flex-1 overflow-y-auto">
+        <div class="max-w-3xl mx-auto px-6 py-6">
+          <!-- POSTFÄCHER -->
+          <template v-if="tab === 'mailboxes'">
+            <h1 class="font-head text-[20px] text-ebony tracking-wide mb-4">Postfächer</h1>
+
+            <section>
+              <div class="flex items-center justify-between">
+                <h2 class="text-[13px] uppercase tracking-wider text-neutral-500">Meine Postfächer</h2>
+                <button @click="openNew('personal')" class="flex items-center gap-1 text-[12px] px-2.5 py-1.5 rounded-lg bg-coral text-white hover:bg-coral-dark"><Icon name="plus" class="w-3.5 h-3.5" /> Postfach</button>
               </div>
-              <div class="ml-auto flex gap-2 text-[12px]">
-                <button @click="openEdit(m)" class="text-navy hover:underline">Bearbeiten</button>
-                <button @click="delMailbox(m)" class="text-red-600 hover:underline">Löschen</button>
+              <p class="text-[12px] text-neutral-500 mt-0.5">Nur du siehst diese Postfächer. Aufgaben daraus sieht das ganze Team.</p>
+              <div class="mt-3 space-y-2">
+                <div v-for="m in personalBoxes" :key="m.id" class="bg-white border border-[#e6dad6] rounded-xl p-3 flex items-center gap-3">
+                  <span class="w-9 h-9 rounded-lg grid place-items-center text-white shrink-0" style="background:#eb5d4f"><Icon name="envelope" class="w-4 h-4" /></span>
+                  <div class="min-w-0">
+                    <div class="text-[13px] font-semibold text-navy">{{ m.name }}</div>
+                    <div class="text-[11px] text-neutral-500">{{ m.email }} · IMAP {{ m.imapHost }}:{{ m.imapPort }} · {{ m.hasPassword ? 'Passwort ✓' : 'kein Passwort' }} · {{ m.active ? 'aktiv' : 'inaktiv' }}</div>
+                  </div>
+                  <div class="ml-auto flex gap-1">
+                    <button @click="openEdit(m)" title="Bearbeiten" class="w-8 h-8 grid place-items-center rounded-lg text-neutral-500 hover:bg-beige hover:text-navy"><Icon name="pencil" class="w-4 h-4" /></button>
+                    <button @click="delMailbox(m)" title="Löschen" class="w-8 h-8 grid place-items-center rounded-lg text-neutral-400 hover:bg-red-50 hover:text-red-600"><Icon name="trash" class="w-4 h-4" /></button>
+                  </div>
+                </div>
+                <div v-if="!personalBoxes.length" class="text-[12px] text-neutral-400">Noch keine eigenen Postfächer.</div>
+              </div>
+            </section>
+
+            <section v-if="isAdmin" class="mt-7">
+              <div class="flex items-center justify-between">
+                <h2 class="text-[13px] uppercase tracking-wider text-neutral-500">Globale Postfächer (Team)</h2>
+                <button @click="openNew('global')" class="flex items-center gap-1 text-[12px] px-2.5 py-1.5 rounded-lg bg-navy text-white hover:opacity-90"><Icon name="plus" class="w-3.5 h-3.5" /> Team-Postfach</button>
+              </div>
+              <p class="text-[12px] text-neutral-500 mt-0.5">Sehen &amp; nutzen alle. Nur Admins verwalten sie.</p>
+              <div class="mt-3 space-y-2">
+                <div v-for="m in globalBoxes" :key="m.id" class="bg-white border border-[#e6dad6] rounded-xl p-3 flex items-center gap-3">
+                  <span class="w-9 h-9 rounded-lg grid place-items-center text-white shrink-0" style="background:#414c65"><Icon name="envelope" class="w-4 h-4" /></span>
+                  <div class="min-w-0">
+                    <div class="text-[13px] font-semibold text-navy">{{ m.name }}</div>
+                    <div class="text-[11px] text-neutral-500">{{ m.email }} · IMAP {{ m.imapHost }}:{{ m.imapPort }} · {{ m.hasPassword ? 'Passwort ✓' : 'kein Passwort' }} · {{ m.active ? 'aktiv' : 'inaktiv' }}</div>
+                  </div>
+                  <div class="ml-auto flex gap-1">
+                    <button @click="openEdit(m)" title="Bearbeiten" class="w-8 h-8 grid place-items-center rounded-lg text-neutral-500 hover:bg-beige hover:text-navy"><Icon name="pencil" class="w-4 h-4" /></button>
+                    <button @click="delMailbox(m)" title="Löschen" class="w-8 h-8 grid place-items-center rounded-lg text-neutral-400 hover:bg-red-50 hover:text-red-600"><Icon name="trash" class="w-4 h-4" /></button>
+                  </div>
+                </div>
+                <div v-if="!globalBoxes.length" class="text-[12px] text-neutral-400">Noch keine Team-Postfächer.</div>
+              </div>
+            </section>
+          </template>
+
+          <!-- BENUTZER -->
+          <template v-else-if="tab === 'users'">
+            <div class="flex items-center justify-between mb-4">
+              <h1 class="font-head text-[20px] text-ebony tracking-wide">Benutzer</h1>
+              <button @click="showUserForm = !showUserForm" class="flex items-center gap-1 text-[12px] px-2.5 py-1.5 rounded-lg bg-coral text-white hover:bg-coral-dark"><Icon name="plus" class="w-3.5 h-3.5" /> Benutzer</button>
+            </div>
+            <div v-if="showUserForm" class="mb-3 bg-white border border-[#e6dad6] rounded-xl p-3 grid grid-cols-2 gap-2">
+              <input v-model="userForm.email" placeholder="E-Mail" class="border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px]" />
+              <input v-model="userForm.password" placeholder="Passwort" class="border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px]" />
+              <input v-model="userForm.firstName" placeholder="Vorname" class="border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px]" />
+              <input v-model="userForm.lastName" placeholder="Nachname" class="border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px]" />
+              <label class="text-[13px] flex items-center gap-2 text-neutral-600"><input type="checkbox" v-model="userForm.admin" /> Admin</label>
+              <div class="text-right"><button @click="saveUser" class="text-[13px] px-3 py-1.5 rounded-lg bg-navy text-white">Anlegen</button></div>
+            </div>
+            <div class="space-y-2">
+              <div v-for="u in users" :key="u.id" class="bg-white border border-[#e6dad6] rounded-xl p-3 flex items-center gap-3">
+                <span class="w-9 h-9 rounded-full grid place-items-center text-[12px] font-bold text-white" style="background:#414c65">{{ u.name.slice(0, 2).toUpperCase() }}</span>
+                <div class="min-w-0">
+                  <div class="text-[13px] font-semibold text-navy">{{ u.name }}<span v-if="u.isAdmin" class="ml-2 text-[10px] px-1.5 py-0.5 rounded" style="background:#eb5d4f22;color:#b23b2e">Admin</span></div>
+                  <div class="text-[11px] text-neutral-500">{{ u.email }}</div>
+                </div>
+                <div class="ml-auto flex gap-2 text-[12px]">
+                  <button @click="toggleAdmin(u)" class="text-navy hover:underline">{{ u.isAdmin ? 'Admin entziehen' : 'zum Admin' }}</button>
+                  <button @click="resetPw(u)" class="text-navy hover:underline">Passwort</button>
+                  <button v-if="u.id !== auth.me?.id" @click="delUser(u)" title="Löschen" class="w-7 h-7 grid place-items-center rounded-lg text-neutral-400 hover:bg-red-50 hover:text-red-600"><Icon name="trash" class="w-4 h-4" /></button>
+                </div>
               </div>
             </div>
-            <div v-if="!personalBoxes.length" class="text-[12px] text-neutral-400">Noch keine eigenen Postfächer.</div>
-          </div>
-        </section>
-
-        <!-- Globale Postfächer (Admin) -->
-        <section v-if="isAdmin" class="mt-7">
-          <div class="flex items-center justify-between">
-            <h2 class="text-[13px] uppercase tracking-wider text-neutral-500">Globale Postfächer (Team)</h2>
-            <button @click="openNew('global')" class="text-[12px] px-2 py-1 rounded-lg bg-navy text-white">+ Team-Postfach</button>
-          </div>
-          <p class="text-[12px] text-neutral-500 mt-0.5">Sehen & nutzen alle. Nur Admins verwalten sie.</p>
-          <div class="mt-2 space-y-2">
-            <div v-for="m in globalBoxes" :key="m.id" class="bg-white border border-[#e6dad6] rounded-xl p-3 flex items-center gap-3">
-              <span class="w-2 h-2 rounded-full" style="background:#414c65"></span>
-              <div class="min-w-0">
-                <div class="text-[13px] font-semibold text-navy">{{ m.name }}</div>
-                <div class="text-[11px] text-neutral-500">{{ m.email }} · IMAP {{ m.imapHost }}:{{ m.imapPort }} · {{ m.hasPassword ? 'Passwort gesetzt' : 'kein Passwort' }} · {{ m.active ? 'aktiv' : 'inaktiv' }}</div>
-              </div>
-              <div class="ml-auto flex gap-2 text-[12px]">
-                <button @click="openEdit(m)" class="text-navy hover:underline">Bearbeiten</button>
-                <button @click="delMailbox(m)" class="text-red-600 hover:underline">Löschen</button>
-              </div>
-            </div>
-            <div v-if="!globalBoxes.length" class="text-[12px] text-neutral-400">Noch keine Team-Postfächer.</div>
-          </div>
-        </section>
-
-        <!-- Benutzer (Admin) -->
-        <section v-if="isAdmin" class="mt-7">
-          <div class="flex items-center justify-between">
-            <h2 class="text-[13px] uppercase tracking-wider text-neutral-500">Benutzer</h2>
-            <button @click="showUserForm = !showUserForm" class="text-[12px] px-2 py-1 rounded-lg bg-coral text-white">+ Benutzer</button>
-          </div>
-          <div v-if="showUserForm" class="mt-2 bg-white border border-[#e6dad6] rounded-xl p-3 grid grid-cols-2 gap-2">
-            <input v-model="userForm.email" placeholder="E-Mail" class="border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px]" />
-            <input v-model="userForm.password" placeholder="Passwort" class="border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px]" />
-            <input v-model="userForm.firstName" placeholder="Vorname" class="border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px]" />
-            <input v-model="userForm.lastName" placeholder="Nachname" class="border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px]" />
-            <label class="text-[13px] flex items-center gap-2 text-neutral-600"><input type="checkbox" v-model="userForm.admin" /> Admin</label>
-            <div class="text-right"><button @click="saveUser" class="text-[13px] px-3 py-1.5 rounded-lg bg-navy text-white">Anlegen</button></div>
-          </div>
-          <div class="mt-2 space-y-2">
-            <div v-for="u in users" :key="u.id" class="bg-white border border-[#e6dad6] rounded-xl p-3 flex items-center gap-3">
-              <span class="w-8 h-8 rounded-lg flex items-center justify-center text-[11px] font-bold text-white" style="background:#414c65">{{ u.name.slice(0, 2).toUpperCase() }}</span>
-              <div class="min-w-0">
-                <div class="text-[13px] font-semibold text-navy">{{ u.name }}<span v-if="u.isAdmin" class="ml-2 text-[10px] px-1.5 py-0.5 rounded" style="background:#eb5d4f22;color:#b23b2e">Admin</span></div>
-                <div class="text-[11px] text-neutral-500">{{ u.email }}</div>
-              </div>
-              <div class="ml-auto flex gap-2 text-[12px]">
-                <button @click="toggleAdmin(u)" class="text-navy hover:underline">{{ u.isAdmin ? 'Admin entziehen' : 'zum Admin' }}</button>
-                <button @click="resetPw(u)" class="text-navy hover:underline">Passwort</button>
-                <button v-if="u.id !== auth.me?.id" @click="delUser(u)" class="text-red-600 hover:underline">Löschen</button>
-              </div>
-            </div>
-          </div>
-        </section>
+          </template>
+        </div>
       </div>
     </div>
 
