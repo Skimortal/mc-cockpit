@@ -39,6 +39,7 @@ let UID = 100;
 const state = {
   selConv: null, group:'person', query:'', replyText:'', commentText:'', showDone:false,
   inboxFilter:'alle', openMsgs:new Set(),
+  view:'mail', selCompany:1, companyFilter:'alle', companyQuery:'',
   convs: [
     { id:1, from:'Hofer SI · J. Janušič', email:'bpet@hofer.si', subj:'Mehraufwand-Verrechnung PO 4529979330', time:'09:14', unread:false, state:'aufgabe', taskId:11,
       thread:[
@@ -79,6 +80,30 @@ const NEWMAILS = [
   {from:'Aldi Nord · Einkauf', email:'einkauf@aldi-nord.de', subj:'Ausschreibung Premium Pudding 3er Q3', body:'Sehr geehrte Damen und Herren, wir laden Sie zur Ausschreibung Premium Pudding 3er (Q3) ein. Abgabe über Ariba bis 28.08.', tag:'Ausschreibung', title:'Ausschreibung Premium Pudding 3er Q3 (Aldi Nord) – Angebot bis 28.08.', summary:'Aldi Nord lädt zur Ariba-Ausschreibung Premium Pudding 3er Q3; Abgabe bis 28.08.', prio:'Hoch'},
 ];
 let newMailIdx = 0;
+
+// Firmen: Hersteller (unsere Kunden) + Handelsketten (Abnehmer) — flexibel
+let COMPANIES = [
+  { id:1, name:'Mladegs Pak', type:'hersteller', sub:'vertreten durch Mladegs Austria GmbH', tags:['Lebensmittel','Ketchup','Pudding'],
+    fields:[{label:'Steuernummer (AT)',value:'ATU 7654321'},{label:'EORI',value:'ATEOS1000xxxx'},{label:'Adresse (Werk)',value:'Industrijska 1, RS-21000 Novi Sad'},{label:'Rechnungsadresse',value:'Mladegs Austria GmbH, 1010 Wien'}],
+    contacts:[{dept:'Direktor',name:'M. Mladegs',email:'direktor@mladegs.rs',phone:'+381 21 000'},{dept:'Logistik',name:'S. Petrović',email:'logistik@mladegs.rs',phone:''},{dept:'Finanzen',name:'A. Jović',email:'finanzen@mladegs.rs',phone:''}],
+    docs:[{name:'Lieferantenerklärung 2026',type:'PDF',date:'2026-01-15'},{name:'Produktspezifikation Ketchup 1kg',type:'PDF',date:'2025-11-02'},{name:'IFS-Zertifikat',type:'PDF',date:'2025-09-20'}],
+    note:'Hauptlieferant Ketchup-Varianten + Premium Pudding 3er.' },
+  { id:2, name:'Alma Ras', type:'hersteller', sub:'Textil (Unterwäsche)', tags:['Textil'],
+    fields:[{label:'Steuernummer',value:'BA 12345678'},{label:'EORI',value:'BA…'},{label:'Adresse',value:'Olovo, Bosnien-Herzegowina'}],
+    contacts:[{dept:'Direktor',name:'E. Ras',email:'office@almaras.ba',phone:''}],
+    docs:[{name:'Rahmenvertrag',type:'PDF',date:'2025-06-01'}], note:'' },
+  { id:3, name:'Hofer / Aldi Süd', type:'handel', sub:'Abnehmer AT/CH/IT/HU/SI + DE', tags:['Diskont'],
+    fields:[{label:'GLN',value:'90012345678'},{label:'Plattform',value:'Ariba'},{label:'Länder',value:'AT, CH, IT, HU, SI, DE'}],
+    contacts:[{dept:'Einkauf',name:'F. Stockmann',email:'stockmann@aldi-sued.de',phone:''},{dept:'QM',name:'HOFER QM',email:'qm@hofer.at',phone:''},{dept:'Logistik',name:'J. Janušič',email:'bpet@hofer.si',phone:''}],
+    docs:[{name:'Lieferantenhandbuch',type:'PDF',date:'2025-03-10'}],
+    note:'Ausschreibungen cross-country (Aldi GS); Zuschlag nach Ländergruppen.' },
+  { id:4, name:'Aldi Nord', type:'handel', sub:'Abnehmer DE', tags:['Diskont'],
+    fields:[{label:'Plattform',value:'Ariba'},{label:'Länder',value:'DE'}],
+    contacts:[{dept:'Einkauf',name:'Aldi Nord Einkauf',email:'einkauf@aldi-nord.de',phone:''}], docs:[], note:'' },
+  { id:5, name:'Edeka', type:'handel', sub:'Abnehmer DE', tags:['Vollsortiment'],
+    fields:[{label:'Länder',value:'DE'}], contacts:[], docs:[], note:'' },
+];
+const curCompany = () => COMPANIES.find(x=>x.id===state.selCompany);
 
 // ---------------- HELPERS ----------------
 const BADGE = {Etikett:'background:#eb5d4f;color:#fff',Labor:'background:#9d9c87;color:#fff',ASN:'background:#414c65;color:#fff',Muster:'background:#d0cc5a;color:#191118',Rechnung:'background:#4e4d4c;color:#fff',Ausschreibung:'background:#eb5d4f;color:#fff',Reklamation:'background:#eb5d4f22;color:#b23b2e',Logistik:'background:#414c6522;color:#414c65',Allgemein:'background:#e7ddd9;color:#6b5f5a'};
@@ -127,6 +152,16 @@ const A = {
     else{t.status=val;const c=convOf(t);if(c)c.state=(val==='done')?'erledigt':(c.taskId?'aufgabe':c.state);toast('→ '+STATUS[val]);}
     render();
   },
+  // --- Kunden / Firmen ---
+  view(v){state.view=v;render();},
+  selCompany(id){state.selCompany=+id;render();},
+  cfilter(f){state.companyFilter=f;render();},
+  addField(){const c=curCompany();const l=prompt('Feldname (z. B. „USt-ID DE", „GLN", „Zahlungsziel")');if(!l)return;c.fields.push({label:l,value:prompt('Wert')||''});render();},
+  editField(i){const c=curCompany();const f=c.fields[+i];const v=prompt(f.label,f.value);if(v!==null){f.value=v;render();}},
+  addContact(){const c=curCompany();const d=prompt('Abteilung (Direktor / Logistik / Finanzen / Einkauf / QM …)');if(!d)return;c.contacts.push({dept:d,name:prompt('Name')||'',email:prompt('E-Mail')||'',phone:''});render();},
+  addDoc(){const c=curCompany();const n=prompt('Dokumentname');if(!n)return;c.docs.push({name:n,type:'PDF',date:'2026-06-10'});render();},
+  addTagC(){const c=curCompany();const t=prompt('Tag');if(t){c.tags.push(t);render();}},
+  addCompany(){const n=prompt('Firmenname');if(!n)return;const id=++UID;COMPANIES.push({id,name:n,type:'hersteller',sub:'',tags:[],fields:[],contacts:[],docs:[],note:''});state.selCompany=id;render();},
 };
 
 // ---------------- RENDER ----------------
@@ -281,13 +316,12 @@ function detailHTML(){
       <div class="mt-1.5 flex justify-end"><button data-action="send" class="text-[12px] px-3 py-1.5 rounded-lg bg-coral text-white font-medium">Senden</button></div>
     </div>`;
 }
-function render(){
-  document.getElementById('app').innerHTML=`
-  <div class="h-screen flex flex-col bg-beige">
-    <!-- Topbar -->
-    <div class="bg-navy text-white flex items-center gap-3 px-5 py-2.5">
-      <img src="assets/most-weiss.png" class="h-5" alt="MOST">
-      <span class="text-[12px] opacity-60">Cockpit</span>
+function topbarHTML(){
+  const tab=(v,l)=>`<button data-action="view" data-id="${v}" class="text-[12px] px-3 py-1 rounded-lg ${state.view===v?'bg-white text-navy font-semibold':'text-white/70 hover:bg-white/10'}">${l}</button>`;
+  return `<div class="bg-navy text-white flex items-center gap-3 px-5 py-2.5">
+    <img src="assets/most-weiss.png" class="h-5" alt="MOST">
+    <div class="flex items-center gap-1 ml-1">${tab('mail','Aufgaben')}${tab('kunden','Kunden')}</div>
+    ${state.view==='mail'?`
       <input value="${state.query.replace(/"/g,'&quot;')}" data-action="search" placeholder="🔍 Suchen (auch erledigte)…" class="ml-3 text-[12px] bg-white/10 placeholder-white/50 text-white rounded-lg px-3 py-1 w-56 outline-none">
       <div class="ml-auto flex items-center gap-3 text-[12px]">
         <div class="flex items-center bg-white/10 rounded-lg p-0.5">
@@ -296,27 +330,89 @@ function render(){
         </div>
         <button data-action="simulate" class="px-2 py-1 rounded-lg bg-coral text-white">📥 Neue Mail</button>
         <span class="opacity-90">Aleksandar ▾</span>
+      </div>`:`
+      <input value="${state.companyQuery.replace(/"/g,'&quot;')}" data-action="csearch" placeholder="🔍 Kunden / Firmen suchen…" class="ml-3 text-[12px] bg-white/10 placeholder-white/50 text-white rounded-lg px-3 py-1 w-64 outline-none">
+      <span class="ml-auto opacity-90 text-[12px]">Aleksandar ▾</span>`}
+  </div>`;
+}
+function mailBodyHTML(){
+  return `
+    <div class="w-[330px] shrink-0 bg-beige-soft border-r border-[#e6dad6] flex flex-col">
+      <div class="px-3 pt-3 pb-2 flex items-center gap-1 text-[11px]">
+        ${[['alle','Alle'],['ungelesen','Ungelesen'],['ohneaufgabe','ohne Aufgabe']].map(([k,l])=>`<button data-action="filter" data-id="${k}" class="px-2 py-1 rounded ${state.inboxFilter===k?'bg-coral text-white':'text-neutral-500 hover:bg-beige'}">${l}</button>`).join('')}
       </div>
+      <div class="px-3 pb-1 text-[10px] uppercase tracking-wider text-neutral-400">Posteingang</div>
+      <div class="overflow-y-auto flex-1">${inboxHTML()}</div>
     </div>
-    <!-- Split -->
-    <div class="flex-1 flex min-h-0">
-      <div class="w-[330px] shrink-0 bg-beige-soft border-r border-[#e6dad6] flex flex-col">
-        <div class="px-3 pt-3 pb-2 flex items-center gap-1 text-[11px]">
-          ${[['alle','Alle'],['ungelesen','Ungelesen'],['ohneaufgabe','ohne Aufgabe']].map(([k,l])=>`<button data-action="filter" data-id="${k}" class="px-2 py-1 rounded ${state.inboxFilter===k?'bg-coral text-white':'text-neutral-500 hover:bg-beige'}">${l}</button>`).join('')}
-        </div>
-        <div class="px-3 pb-1 text-[10px] uppercase tracking-wider text-neutral-400">Posteingang</div>
-        <div class="overflow-y-auto flex-1">${inboxHTML()}</div>
+    <div class="flex-1 min-w-0 flex flex-col">
+      <div class="px-5 pt-3 pb-2 flex items-center gap-3">
+        <span class="text-[10px] uppercase tracking-wider text-neutral-400">Aufgaben — nach ${state.group==='person'?'Person':'Status'}</span>
+        <button data-action="toggleDone" class="text-[10px] px-2 py-0.5 rounded ${state.showDone?'bg-navy text-white':'bg-white text-neutral-500 border border-[#e6dad6]'}">${state.showDone?'erledigte ausblenden':'erledigte zeigen'}</button>
       </div>
-      <div class="flex-1 min-w-0 flex flex-col">
-        <div class="px-5 pt-3 pb-2 flex items-center gap-3">
-          <span class="text-[10px] uppercase tracking-wider text-neutral-400">Aufgaben — nach ${state.group==='person'?'Person':'Status'}</span>
-          <button data-action="toggleDone" class="text-[10px] px-2 py-0.5 rounded ${state.showDone?'bg-navy text-white':'bg-white text-neutral-500 border border-[#e6dad6]'}">${state.showDone?'erledigte ausblenden':'erledigte zeigen'}</button>
+      <div class="flex-1 overflow-x-auto px-5 pb-4">${boardHTML()}</div>
+    </div>
+    <div class="w-[360px] shrink-0 bg-white border-l border-[#e6dad6] flex flex-col">${detailHTML()}</div>`;
+}
+function visibleCompanies(){
+  let cs=COMPANIES.slice();
+  if(state.companyFilter!=='alle')cs=cs.filter(c=>c.type===state.companyFilter);
+  if(state.companyQuery)cs=cs.filter(c=>(c.name+c.sub+c.tags.join(' ')).toLowerCase().includes(state.companyQuery.toLowerCase()));
+  return cs;
+}
+function companyListHTML(){
+  const seg=(k,l)=>`<button data-action="cfilter" data-id="${k}" class="text-[11px] px-2 py-1 rounded ${state.companyFilter===k?'bg-coral text-white':'text-neutral-500 hover:bg-beige'}">${l}</button>`;
+  return `<div class="w-[300px] shrink-0 bg-beige-soft border-r border-[#e6dad6] flex flex-col">
+    <div class="px-3 pt-3 pb-2 flex items-center gap-1">${seg('alle','Alle')}${seg('hersteller','Hersteller')}${seg('handel','Handelsketten')}</div>
+    <div class="overflow-y-auto flex-1 p-2.5">${visibleCompanies().map(c=>`
+      <div data-action="selCompany" data-id="${c.id}" class="mb-2.5 bg-white border ${state.selCompany===c.id?'border-coral ring-2 ring-coral/30':'border-[#e6dad6]'} rounded-xl p-3 shadow-sm hover:shadow-md cursor-pointer">
+        <div class="flex items-center gap-2">
+          <span class="w-8 h-8 rounded-lg flex items-center justify-center text-[11px] font-bold text-white" style="background:${c.type==='hersteller'?'#414c65':'#9d9c87'}">${c.name.slice(0,2).toUpperCase()}</span>
+          <div class="min-w-0"><div class="text-[13px] font-semibold text-navy truncate">${c.name}</div><div class="text-[10px] text-neutral-400 truncate">${c.sub}</div></div>
         </div>
-        <div class="flex-1 overflow-x-auto px-5 pb-4">${boardHTML()}</div>
-      </div>
-      <div class="w-[360px] shrink-0 bg-white border-l border-[#e6dad6] flex flex-col">${detailHTML()}</div>
+        <div class="mt-2 flex items-center gap-1.5">
+          <span class="badge" style="${c.type==='hersteller'?'background:#414c6522;color:#414c65':'background:#9d9c8733;color:#6b6a52'}">${c.type==='hersteller'?'Hersteller (Kunde)':'Handelskette'}</span>
+          <span class="text-[10px] text-neutral-400">${c.contacts.length} Kontakte · ${c.docs.length} Dok.</span>
+        </div>
+      </div>`).join('')||'<div class="text-xs text-neutral-400 p-4">Keine Treffer.</div>'}
+      <button data-action="addCompany" class="w-full mt-1 py-2 rounded-xl border-2 border-dashed border-[#e0d2cd] text-[12px] text-neutral-400 hover:border-coral hover:text-coral">+ Firma anlegen</button>
     </div>
   </div>`;
+}
+function companyDetailHTML(){
+  const c=curCompany();
+  if(!c)return `<div class="flex-1 flex items-center justify-center text-neutral-400 text-sm">Wähle links eine Firma.</div>`;
+  const depts={};c.contacts.forEach(k=>{(depts[k.dept]=depts[k.dept]||[]).push(k)});
+  const dash='<span class="text-neutral-300">—</span>';
+  const fieldCard=(f,i)=>`<div data-action="editField" data-id="${i}" class="bg-white border border-[#e6dad6] rounded-lg px-3 py-2 cursor-pointer hover:border-coral">
+    <div class="text-[10px] uppercase tracking-wide text-neutral-400">${f.label}</div><div class="text-[13px] text-ebony">${f.value||dash}</div></div>`;
+  return `<div class="flex-1 min-w-0 overflow-y-auto">
+    <div class="px-6 py-5 max-w-3xl">
+      <div class="flex items-center gap-3">
+        <span class="w-12 h-12 rounded-xl flex items-center justify-center text-[15px] font-bold text-white" style="background:${c.type==='hersteller'?'#414c65':'#9d9c87'}">${c.name.slice(0,2).toUpperCase()}</span>
+        <div><div class="font-head text-[20px] text-ebony tracking-wide">${c.name}</div><div class="text-[12px] text-neutral-500">${c.sub}</div></div>
+        <span class="ml-auto badge" style="${c.type==='hersteller'?'background:#414c6522;color:#414c65':'background:#9d9c8733;color:#6b6a52'}">${c.type==='hersteller'?'Hersteller (Kunde)':'Handelskette (Abnehmer)'}</span>
+      </div>
+      <div class="mt-2 flex flex-wrap gap-1">${c.tags.map(t=>`<span class="badge" style="background:#eb5d4f18;color:#b23b2e">${t}</span>`).join('')}<button data-action="addTagC" class="badge" style="background:#f0e7e3;color:#b7a9a3">+ Tag</button></div>
+
+      <div class="mt-5 flex items-center justify-between"><h3 class="text-[12px] uppercase tracking-wider text-neutral-400">Stammdaten</h3><button data-action="addField" class="text-[11px] text-coral font-medium">+ Feld</button></div>
+      <div class="mt-2 grid grid-cols-2 gap-2">${c.fields.map(fieldCard).join('')}</div>
+
+      <div class="mt-6 flex items-center justify-between"><h3 class="text-[12px] uppercase tracking-wider text-neutral-400">Ansprechpartner</h3><button data-action="addContact" class="text-[11px] text-coral font-medium">+ Ansprechpartner</button></div>
+      ${Object.keys(depts).length?Object.entries(depts).map(([d,ks])=>`
+        <div class="mt-2"><div class="text-[11px] font-semibold text-navy mb-1">${d}</div>
+          <div class="grid grid-cols-2 gap-2">${ks.map(k=>`<div class="bg-white border border-[#e6dad6] rounded-lg px-3 py-2"><div class="text-[13px] text-ebony font-medium">${k.name}</div><div class="text-[11px] text-neutral-500">${k.email||''}</div>${k.phone?`<div class="text-[11px] text-neutral-400">${k.phone}</div>`:''}</div>`).join('')}</div>
+        </div>`).join(''):'<div class="text-[12px] text-neutral-400 mt-1">Noch keine Ansprechpartner.</div>'}
+
+      <div class="mt-6 flex items-center justify-between"><h3 class="text-[12px] uppercase tracking-wider text-neutral-400">Dokumente</h3><button data-action="addDoc" class="text-[11px] text-coral font-medium">+ Dokument</button></div>
+      <div class="mt-2 space-y-1.5">${c.docs.map(d=>`<div class="flex items-center gap-2 bg-white border border-[#e6dad6] rounded-lg px-3 py-2"><span class="w-7 h-7 rounded bg-coral/10 text-coral text-[10px] flex items-center justify-center font-semibold">${d.type}</span><span class="text-[13px] text-ebony">${d.name}</span><span class="ml-auto text-[11px] text-neutral-400">${d.date}</span></div>`).join('')||'<div class="text-[12px] text-neutral-400">Noch keine Dokumente — per „+ Dokument" (im echten Tool: Drag&Drop).</div>'}</div>
+
+      <div class="mt-6"><h3 class="text-[12px] uppercase tracking-wider text-neutral-400 mb-2">Notiz</h3><div class="bg-white border border-[#e6dad6] rounded-lg px-3 py-2 text-[13px] text-neutral-600 min-h-[44px]">${c.note||dash}</div></div>
+    </div>
+  </div>`;
+}
+function kundenBodyHTML(){ return companyListHTML()+companyDetailHTML(); }
+function render(){
+  document.getElementById('app').innerHTML=`<div class="h-screen flex flex-col bg-beige">${topbarHTML()}<div class="flex-1 flex min-h-0">${state.view==='mail'?mailBodyHTML():kundenBodyHTML()}</div></div>`;
 }
 
 // ---------------- EVENTS ----------------
@@ -327,6 +423,9 @@ document.addEventListener('click',e=>{const el=e.target.closest('[data-action]')
   else if(a==='draft')A.draft(); else if(a==='send')A.send(); else if(a==='simulate')A.simulate();
   else if(a==='quickDone')A.quickDone(id);
   else if(a==='toggleMsg')A.toggleMsg(id); else if(a==='allMsgs')A.allMsgs();
+  else if(a==='view')A.view(id); else if(a==='selCompany')A.selCompany(id); else if(a==='cfilter')A.cfilter(id);
+  else if(a==='addField')A.addField(); else if(a==='editField')A.editField(id); else if(a==='addContact')A.addContact();
+  else if(a==='addDoc')A.addDoc(); else if(a==='addTagC')A.addTagC(); else if(a==='addCompany')A.addCompany();
 });
 // ---- Drag & Drop (Kanban) ----
 let dragId=null;
@@ -335,7 +434,12 @@ document.addEventListener('dragend',e=>{const card=e.target.closest('[data-task]
 document.addEventListener('dragover',e=>{const col=e.target.closest('.dropcol');if(col&&dragId!=null){e.preventDefault();document.querySelectorAll('.dropcol').forEach(c=>c.classList.toggle('over',c===col));}});
 document.addEventListener('drop',e=>{const col=e.target.closest('.dropcol');if(col&&dragId!=null){e.preventDefault();A.move(dragId,col.dataset.colType,col.dataset.colVal);dragId=null;}});
 document.addEventListener('change',e=>{const el=e.target.closest('[data-action="assign"]');if(el)A.assign(el.value);});
-document.addEventListener('input',e=>{if(e.target.id==='replyBox')state.replyText=e.target.value;if(e.target.id==='commentBox')state.commentText=e.target.value;if(e.target.dataset&&e.target.dataset.action==='search'){state.query=e.target.value;render();const s=document.querySelector('[data-action="search"]');if(s){s.focus();s.setSelectionRange(s.value.length,s.value.length);}}});
+document.addEventListener('input',e=>{
+  if(e.target.id==='replyBox')state.replyText=e.target.value;
+  if(e.target.id==='commentBox')state.commentText=e.target.value;
+  const a=e.target.dataset&&e.target.dataset.action;
+  if(a==='search'||a==='csearch'){const v=e.target.value;if(a==='search')state.query=v;else state.companyQuery=v;render();const s=document.querySelector(`[data-action="${a}"]`);if(s){s.focus();s.setSelectionRange(s.value.length,s.value.length);}}
+});
 render();
 </script>
 </body>
