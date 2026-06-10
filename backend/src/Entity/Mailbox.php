@@ -2,12 +2,10 @@
 
 namespace App\Entity;
 
-use ApiPlatform\Metadata\ApiResource;
 use Doctrine\ORM\Mapping as ORM;
 
 /** Konfiguration eines Postfachs (IMAP-Abruf + SMTP-Versand). */
 #[ORM\Entity]
-#[ApiResource]
 class Mailbox
 {
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
@@ -18,6 +16,14 @@ class Mailbox
 
     #[ORM\Column(length: 180)]
     public string $email = '';
+
+    /** scope: global (Team-Postfach, alle sehen es) | personal (nur der owner). */
+    #[ORM\Column(length: 10, options: ['default' => 'global'])]
+    public string $scope = 'global';
+
+    /** Eigentümer bei scope=personal (null bei global). */
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    public ?User $owner = null;
 
     #[ORM\Column(length: 180)]
     public string $imapHost = '';
