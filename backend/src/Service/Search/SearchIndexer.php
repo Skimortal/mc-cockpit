@@ -112,12 +112,17 @@ final class SearchIndexer
         $mb = $c->mailbox;
         $hasTask = $this->em->getRepository(Task::class)->count(['conversation' => $c]) > 0;
 
+        $eff = $c->emails->last() ? $c->emails->last()->occurredAt : ($c->lastMessageAt ?? $c->createdAt);
+
         return [
             'id' => $c->id,
             'subject' => $c->subject,
             'customer' => trim(($c->customerName ?? '').' '.($c->customerEmail ?? '')),
             'from' => $c->customerName ?: $c->customerEmail,
             'body' => mb_substr(trim($body), 0, 30000),
+            'date' => $eff?->format('Y-m-d H:i'),
+            'mailboxId' => $mb?->id ?? 0,
+            'mailboxName' => $mb?->name ?? '',
             'mailboxScope' => $mb?->scope ?? 'none',
             'ownerId' => $mb?->owner?->getId() ?? 0,
             'hasTask' => $hasTask,

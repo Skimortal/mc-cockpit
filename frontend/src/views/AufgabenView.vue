@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import api from '../api'
 import { useAuth } from '../stores/auth'
 import AppTopbar from '../components/AppTopbar.vue'
@@ -8,6 +8,7 @@ import Icon from '../components/Icon.vue'
 
 const auth = useAuth()
 const route = useRoute()
+const router = useRouter()
 
 interface Mailbox { id: number; name: string; email: string; scope: string; mine: boolean }
 interface Conv { id: number; from: string; email: string; subject: string; lastMessageAt: string; messageCount: number; state: string; taskId: number | null; owner: string | null; mailboxName: string; mailboxScope: string }
@@ -188,8 +189,19 @@ async function manualFetch() {
 async function selectConv(id: number) {
   selConvId.value = id
   replyText.value = ''; replyMsg.value = ''; commentText.value = ''
-  detail.value = (await api.get(`/api/conversations/${id}`)).data
+  const { data } = await api.get(`/api/conversations/${id}`)
+  detail.value = data
+  // Postfach der Konversation aktiv schalten, damit sie links erscheint/markiert ist.
+  if (data.mailboxId && mailboxFilter.value !== String(data.mailboxId) && mailboxes.value.find((m) => m.id === data.mailboxId)) {
+    mailboxFilter.value = String(data.mailboxId)
+    loadInbox()
+  }
   openMsgs.value = new Set([(detail.value?.messages.length ?? 1) - 1])
+}
+function closeDetail() {
+  detail.value = null
+  selConvId.value = null
+  if (route.query.conv) router.replace({ path: '/aufgaben' })
 }
 function toggleMsg(i: number) {
   openMsgs.value.has(i) ? openMsgs.value.delete(i) : openMsgs.value.add(i)
@@ -368,7 +380,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
               <div class="text-[14px] font-semibold text-navy leading-tight truncate">{{ detail.subject }}</div>
               <div class="text-[11px] text-neutral-400 mt-0.5">{{ detail.customerName || detail.customerEmail }}</div>
             </div>
-            <button @click="detail = null; selConvId = null" class="ml-auto text-neutral-400 hover:text-neutral-700 text-xl leading-none">×</button>
+            <button @click="closeDetail" class="ml-auto text-neutral-400 hover:text-neutral-700 text-xl leading-none">×</button>
           </div>
 
           <div class="px-4 py-3 overflow-y-auto flex-1">

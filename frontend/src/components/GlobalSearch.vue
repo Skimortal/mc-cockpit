@@ -30,6 +30,13 @@ function go(path: string, query: Record<string, any>) {
   q.value = ''
   router.push({ path, query })
 }
+function goAll() {
+  const term = q.value.trim()
+  if (term.length < 2) return
+  open.value = false
+  q.value = ''
+  router.push({ path: '/suche', query: { q: term } })
+}
 function onBlur() {
   setTimeout(() => (open.value = false), 150)
 }
@@ -39,8 +46,8 @@ function onBlur() {
   <div class="relative w-full">
     <div class="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-1.5 focus-within:bg-white/20 transition">
       <Icon name="search" class="w-4 h-4 text-white/60 shrink-0" />
-      <input v-model="q" @input="onInput" @focus="open = true" @blur="onBlur" @keyup.escape="open = false"
-        placeholder="Suchen über Aufgaben, Mails, Kunden…"
+      <input v-model="q" @input="onInput" @focus="open = true" @blur="onBlur" @keyup.escape="open = false" @keyup.enter="goAll"
+        placeholder="Suchen über Aufgaben, Mails, Kunden…  (Enter = alle Treffer)"
         class="bg-transparent text-[13px] text-white placeholder-white/50 outline-none w-full" />
     </div>
     <div v-if="open && q.trim().length >= 2"
@@ -70,6 +77,9 @@ function onBlur() {
           </button>
         </div>
       </template>
+      <button @mousedown.prevent="goAll" class="w-full text-left px-3 py-2 text-[12px] text-coral hover:bg-beige-soft border-t border-[#f0e7e3] font-medium">
+        Alle Ergebnisse anzeigen →
+      </button>
     </div>
   </div>
 </template>

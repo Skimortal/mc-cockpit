@@ -166,6 +166,8 @@ class InboxController extends AbstractController
             'subject' => $c->subject,
             'customerName' => $c->customerName,
             'customerEmail' => $c->customerEmail,
+            'mailboxId' => $c->mailbox?->id,
+            'mailboxName' => $c->mailbox?->name,
             'taskId' => ($this->tasksByConversation()[$c->id] ?? null)?->id,
             'messages' => $messages,
         ]);

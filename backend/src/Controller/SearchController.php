@@ -30,37 +30,55 @@ class SearchController extends AbstractController
     public function search(Request $request, #[CurrentUser] ?User $user): JsonResponse
     {
         $q = trim((string) $request->query->get('q', ''));
+        $limit = min(50, max(1, (int) $request->query->get('limit', 8)));
         if (mb_strlen($q) < 2) {
             return $this->json(['tasks' => [], 'conversations' => [], 'companies' => []]);
         }
 
         try {
-            return $this->json($this->meili($q, $user));
+            return $this->json($this->meili($q, $user, $limit));
         } catch (\Throwable) {
-            return $this->json($this->fallback($q, $user));
+            return $this->json($this->fallback($q, $user, $limit));
         }
     }
 
     /** @return array<string,mixed> */
-    private function meili(string $q, ?User $user): array
+    private function meili(string $q, ?User $user, int $limit): array
     {
         $uid = $user?->getId() ?? 0;
         $c = $this->indexer->client();
 
-        $tasks = $c->index(SearchIndexer::TASKS)->search($q, ['limit' => 8])->getHits();
+        $tasks = $c->index(SearchIndexer::TASKS)->search($q, ['limit' => $limit])->getHits();
         $filter = sprintf('mailboxScope = "global" OR ownerId = %d OR hasTask = true', $uid);
-        $convs = $c->index(SearchIndexer::CONVERSATIONS)->search($q, ['limit' => 8, 'filter' => $filter])->getHits();
-        $companies = $c->index(SearchIndexer::COMPANIES)->search($q, ['limit' => 8])->getHits();
+        $convs = $c->index(SearchIndexer::CONVERSATIONS)->search($q, [
+            'limit' => $limit,
+            'filter' => $filter,
+            'attributesToCrop' => ['body'],
+            'cropLength' => 26,
+            'attributesToHighlight' => ['body'],
+            'highlightPreTag' => '«',
+            'highlightPostTag' => '»',
+        ])->getHits();
+        $companies = $c->index(SearchIndexer::COMPANIES)->search($q, ['limit' => $limit])->getHits();
 
         return [
             'tasks' => array_map(fn ($h) => ['id' => $h['id'], 'title' => $h['title'] ?? '', 'status' => $h['status'] ?? null, 'conversationId' => $h['conversationId'] ?? null], $tasks),
-            'conversations' => array_map(fn ($h) => ['id' => $h['id'], 'subject' => $h['subject'] ?? '', 'from' => $h['from'] ?? null, 'hasTask' => $h['hasTask'] ?? false], $convs),
+            'conversations' => array_map(fn ($h) => [
+                'id' => $h['id'], 'subject' => $h['subject'] ?? '', 'from' => $h['from'] ?? null, 'hasTask' => $h['hasTask'] ?? false,
+                'date' => $h['date'] ?? null, 'mailbox' => $h['mailboxName'] ?? null,
+                'snippet' => $this->snippet($h['_formatted']['body'] ?? ''),
+            ], $convs),
             'companies' => array_map(fn ($h) => ['id' => $h['id'], 'name' => $h['name'] ?? '', 'subtitle' => $h['subtitle'] ?? null], $companies),
         ];
     }
 
+    private function snippet(string $s): string
+    {
+        return mb_substr(trim((string) preg_replace('/\s+/u', ' ', $s)), 0, 220);
+    }
+
     /** Postgres-Fallback (Teilstring). @return array<string,mixed> */
-    private function fallback(string $q, ?User $user): array
+    private function fallback(string $q, ?User $user, int $limit = 8): array
     {
         $like = '%'.mb_strtolower($q).'%';
 
@@ -88,8 +106,8 @@ class SearchController extends AbstractController
             if (!$this->maySee($c, $user, isset($taskConvIds[$c->id]))) {
                 continue;
             }
-            $convOut[] = ['id' => $c->id, 'subject' => $c->subject, 'from' => $c->customerName ?: $c->customerEmail, 'hasTask' => isset($taskConvIds[$c->id])];
-            if (\count($convOut) >= 8) {
+            $convOut[] = ['id' => $c->id, 'subject' => $c->subject, 'from' => $c->customerName ?: $c->customerEmail, 'hasTask' => isset($taskConvIds[$c->id]), 'date' => $c->lastMessageAt?->format('Y-m-d H:i'), 'mailbox' => $c->mailbox?->name, 'snippet' => ''];
+            if (\count($convOut) >= $limit) {
                 break;
             }
         }
