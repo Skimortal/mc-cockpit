@@ -6,7 +6,8 @@ import AppTopbar from '../components/AppTopbar.vue'
 import Icon from '../components/Icon.vue'
 import { hlHtml } from '../composables/highlight'
 
-interface Conv { id: number; subject: string; subjectHl?: string; from: string | null; hasTask: boolean; date: string | null; mailbox: string | null; snippet: string | null }
+interface Att { id: number; name: string; preview: boolean }
+interface Conv { id: number; subject: string; subjectHl?: string; from: string | null; hasTask: boolean; date: string | null; mailbox: string | null; snippet: string | null; attachment?: Att | null }
 interface TaskHit { id: number; title: string; titleHl?: string; status: string | null; conversationId: number | null; snippet?: string | null }
 interface CompanyHit { id: number; name: string; nameHl?: string; subtitle: string | null; snippet?: string | null }
 
@@ -50,6 +51,10 @@ function fmtDate(s: string | null) {
 function fmtStatus(s: string | null) {
   return s === 'done' ? 'erledigt' : s === 'in_progress' ? 'in Arbeit' : 'offen'
 }
+function openConv(c: Conv) {
+  const query = c.attachment?.preview ? { conv: c.id, att: c.attachment.id } : { conv: c.id }
+  router.push({ path: '/aufgaben', query })
+}
 
 watch(() => route.query.q, (v) => {
   const s = String(v ?? '')
@@ -90,7 +95,7 @@ onMounted(run)
             <Icon name="envelope" class="w-4 h-4" /> Mails <span class="text-coral">{{ res.conversations.length }}</span>
           </h2>
           <div class="bg-white border border-[#e6dad6] rounded-xl divide-y divide-[#f0e7e3] overflow-hidden">
-            <button v-for="c in res.conversations" :key="c.id" @click="router.push({ path: '/aufgaben', query: { conv: c.id } })"
+            <button v-for="c in res.conversations" :key="c.id" @click="openConv(c)"
               class="w-full text-left px-4 py-2.5 hover:bg-beige-soft block">
               <div class="flex items-center gap-2">
                 <span v-if="c.subject" class="text-[13.5px] font-semibold text-navy truncate" v-html="hlHtml(c.subjectHl || c.subject)"></span>
@@ -104,6 +109,9 @@ onMounted(run)
                 <span v-if="c.mailbox" class="text-neutral-400 truncate">{{ c.mailbox }}</span>
               </div>
               <div v-if="c.snippet" class="text-[12px] text-neutral-500 mt-1 leading-snug line-clamp-2" v-html="hlHtml(c.snippet)"></div>
+              <div v-if="c.attachment?.preview" class="mt-1 inline-flex items-center gap-1 text-[11px] text-coral">
+                <Icon name="paperclip" class="w-3.5 h-3.5 shrink-0" /> Treffer im Anhang „{{ c.attachment.name }}" — öffnet direkt
+              </div>
             </button>
           </div>
         </section>

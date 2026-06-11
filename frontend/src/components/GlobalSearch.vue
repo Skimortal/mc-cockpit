@@ -55,7 +55,8 @@ function openItem(f: { kind: string; item: any }) {
   if (f.kind === 'task') {
     if (f.item.conversationId) go('/aufgaben', { conv: f.item.conversationId })
   } else if (f.kind === 'conv') {
-    go('/aufgaben', { conv: f.item.id })
+    const c = f.item
+    go('/aufgaben', c.attachment?.preview ? { conv: c.id, att: c.attachment.id } : { conv: c.id })
   } else {
     go('/kunden', { company: f.item.id })
   }
@@ -122,6 +123,7 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKey))
             <div class="flex items-center gap-2">
               <Icon name="envelope" class="w-4 h-4 text-navy shrink-0" />
               <span class="text-[13px] truncate" v-html="hlHtml(c.subjectHl || c.subject)"></span>
+              <Icon v-if="c.attachment?.preview" name="paperclip" class="w-3.5 h-3.5 text-coral shrink-0" />
               <span class="text-[11px] text-neutral-400 ml-auto shrink-0 truncate max-w-[35%]">{{ c.from }}</span>
             </div>
             <div v-if="c.snippet" class="text-[11px] text-neutral-400 mt-0.5 ml-6 truncate" v-html="hlHtml(c.snippet)"></div>

@@ -2,6 +2,7 @@
 
 namespace App\Controller;
 
+use App\Entity\Attachment;
 use App\Entity\Company;
 use App\Entity\Conversation;
 use App\Entity\Task;
@@ -83,6 +84,7 @@ class SearchController extends AbstractController
                 'from' => $h['from'] ?? null, 'hasTask' => $h['hasTask'] ?? false,
                 'date' => $h['date'] ?? null, 'mailbox' => $h['mailboxName'] ?? null,
                 'snippet' => $this->crop($h, 'body'),
+                'attachment' => $this->matchAttachment((int) $h['id'], $q),
             ], $convs),
             'companies' => array_map(fn ($h) => [
                 'id' => $h['id'], 'name' => $h['name'] ?? '', 'nameHl' => $this->full($h, 'name'),
@@ -106,6 +108,35 @@ class SearchController extends AbstractController
         }
 
         return mb_substr($s, 0, 240);
+    }
+
+    /** Findet den Anhang einer Konversation, in dem der Suchbegriff steckt (Inhalt oder Dateiname). */
+    private function matchAttachment(int $convId, string $q): ?array
+    {
+        $like = '%'.mb_strtolower($q).'%';
+        $rows = $this->em->createQueryBuilder()
+            ->select('a.id, a.filename, a.contentType')
+            ->from(Attachment::class, 'a')->join('a.email', 'e')
+            ->where('e.conversation = :c')
+            ->andWhere('LOWER(a.extractedText) LIKE :q OR LOWER(a.filename) LIKE :q')
+            ->setParameter('c', $convId)->setParameter('q', $like)
+            ->setMaxResults(1)->getQuery()->getScalarResult();
+        if (!$rows) {
+            return null;
+        }
+        $r = $rows[0];
+
+        return ['id' => (int) $r['id'], 'name' => $r['filename'], 'preview' => $this->previewable((string) $r['contentType'], (string) $r['filename'])];
+    }
+
+    private function previewable(string $type, string $name): bool
+    {
+        $t = mb_strtolower($type);
+
+        return str_contains($t, 'pdf') || str_starts_with($t, 'image/')
+            || str_contains($t, 'word') || str_contains($t, 'sheet') || str_contains($t, 'excel')
+            || str_contains($t, 'presentation') || str_contains($t, 'opendocument')
+            || (bool) preg_match('/\.(pdf|docx?|xlsx?|pptx?|odt|ods|odp|png|jpe?g|gif|webp)$/i', $name);
     }
 
     /** Postgres-Fallback (Teilstring). @return array<string,mixed> */
@@ -137,7 +168,7 @@ class SearchController extends AbstractController
             if (!$this->maySee($c, $user, isset($taskConvIds[$c->id]))) {
                 continue;
             }
-            $convOut[] = ['id' => $c->id, 'subject' => $c->subject, 'subjectHl' => $c->subject, 'from' => $c->customerName ?: $c->customerEmail, 'hasTask' => isset($taskConvIds[$c->id]), 'date' => $c->lastMessageAt?->format('Y-m-d H:i'), 'mailbox' => $c->mailbox?->name, 'snippet' => ''];
+            $convOut[] = ['id' => $c->id, 'subject' => $c->subject, 'subjectHl' => $c->subject, 'from' => $c->customerName ?: $c->customerEmail, 'hasTask' => isset($taskConvIds[$c->id]), 'date' => $c->lastMessageAt?->format('Y-m-d H:i'), 'mailbox' => $c->mailbox?->name, 'snippet' => '', 'attachment' => $this->matchAttachment($c->id, $q)];
             if (\count($convOut) >= $limit) {
                 break;
             }

@@ -186,6 +186,7 @@ async function manualFetch() {
   }
 }
 
+const lastAtt = ref<number | null>(null)
 async function selectConv(id: number) {
   selConvId.value = id
   replyText.value = ''; replyMsg.value = ''; commentText.value = ''
@@ -197,10 +198,22 @@ async function selectConv(id: number) {
     loadInbox()
   }
   openMsgs.value = new Set([(detail.value?.messages.length ?? 1) - 1])
+  openMatchedAtt()
+}
+// Wenn die Suche einen Anhang-Treffer übergibt (?att=ID), Vorschau direkt öffnen.
+function openMatchedAtt() {
+  const attId = Number(route.query.att) || null
+  if (!attId || attId === lastAtt.value || !detail.value) return
+  lastAtt.value = attId
+  for (const m of detail.value.messages) {
+    const a = (m.attachments || []).find((x) => x.id === attId)
+    if (a) { openPreview(a); return }
+  }
 }
 function closeDetail() {
   detail.value = null
   selConvId.value = null
+  lastAtt.value = null
   if (route.query.conv) router.replace({ path: '/aufgaben' })
 }
 function toggleMsg(i: number) {
@@ -264,7 +277,7 @@ function onDrop(col: { type: string; val: string }) {
   else setStatus(t, col.val)
 }
 
-watch(() => route.query.conv, (v) => { if (v) selectConv(Number(v)) })
+watch(() => [route.query.conv, route.query.att], (v) => { if (v[0]) selectConv(Number(v[0])) })
 let pollTimer: ReturnType<typeof setInterval> | undefined
 onMounted(async () => {
   if (!auth.me) await auth.fetchMe().catch(() => {})
