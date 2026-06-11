@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../stores/auth'
 import Icon from './Icon.vue'
 import GlobalSearch from './GlobalSearch.vue'
+import NotificationBell from './NotificationBell.vue'
 
 const auth = useAuth()
 const route = useRoute()
@@ -41,6 +42,7 @@ function logout() {
     </div>
 
     <div class="flex items-center gap-1.5">
+      <NotificationBell />
       <RouterLink to="/einstellungen" title="Einstellungen"
         class="w-9 h-9 rounded-lg grid place-items-center transition"
         :class="route.path === '/einstellungen' ? 'bg-white/15 text-white' : 'text-white/65 hover:bg-white/10 hover:text-white'">

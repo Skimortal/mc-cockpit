@@ -2,6 +2,7 @@
 
 namespace App\Controller;
 
+use App\Entity\Notification;
 use App\Entity\Task;
 use App\Entity\TaskComment;
 use App\Entity\User;
@@ -46,10 +47,24 @@ class BoardController extends AbstractController
     }
 
     #[Route('/api/tasks/{id}/assign', methods: ['POST'])]
-    public function assign(Task $task, Request $request): JsonResponse
+    public function assign(Task $task, Request $request, #[CurrentUser] ?User $user): JsonResponse
     {
         $userId = json_decode($request->getContent(), true)['userId'] ?? null;
         $task->assignee = $userId ? $this->em->getRepository(User::class)->find($userId) : null;
+        if ($task->assignee) {
+            $by = $user ? ($user->getFirstName() ?: $user->getEmail()) : 'Jemand';
+            $this->notify($task->assignee, $user, 'assigned', sprintf('%s hat dir „%s" zugewiesen.', $by, $task->title), $task);
+        }
+        $this->em->flush();
+
+        return $this->json($this->taskArr($task));
+    }
+
+    #[Route('/api/tasks/{id}/due', methods: ['POST'])]
+    public function due(Task $task, Request $request): JsonResponse
+    {
+        $d = json_decode($request->getContent(), true)['dueDate'] ?? null; // 'Y-m-d' oder null
+        $task->dueDate = $d ? new \DateTimeImmutable($d.' 09:00') : null;
         $this->em->flush();
 
         return $this->json($this->taskArr($task));
@@ -90,9 +105,28 @@ class BoardController extends AbstractController
         $c->authorName = $user ? (trim($user->getFirstName().' '.$user->getLastName()) ?: $user->getEmail()) : '?';
         $c->body = $body;
         $this->em->persist($c);
+        if ($task->assignee) {
+            $by = $user ? ($user->getFirstName() ?: $user->getEmail()) : 'Jemand';
+            $this->notify($task->assignee, $user, 'comment', sprintf('%s hat „%s" kommentiert.', $by, $task->title), $task);
+        }
         $this->em->flush();
 
         return $this->json($this->taskArr($task));
+    }
+
+    /** Legt eine Benachrichtigung an (nicht für sich selbst). Flush übernimmt der Aufrufer. */
+    private function notify(?User $to, ?User $actor, string $type, string $text, Task $task): void
+    {
+        if (!$to || ($actor && $to->getId() === $actor->getId())) {
+            return;
+        }
+        $n = new Notification();
+        $n->user = $to;
+        $n->type = $type;
+        $n->text = $text;
+        $n->taskId = $task->id;
+        $n->conversationId = $task->conversation?->id;
+        $this->em->persist($n);
     }
 
     /** @return array<string,mixed> */
@@ -107,6 +141,7 @@ class BoardController extends AbstractController
             'status' => $t->status,
             'priority' => $t->priority,
             'dueDate' => $t->dueDate?->format('Y-m-d'),
+            'overdue' => $t->dueDate && 'done' !== $t->status && $t->dueDate < new \DateTimeImmutable('today'),
             'aiSummary' => $t->aiSummary,
             'suggestedAssignee' => $t->suggestedAssignee,
             'assignee' => $t->assignee ? $this->userArr($t->assignee) : null,

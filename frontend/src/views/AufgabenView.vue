@@ -15,7 +15,7 @@ interface Conv { id: number; from: string; email: string; subject: string; lastM
 interface Person { id: number; name: string }
 interface Comment { author: string; body: string; createdAt: string }
 interface Task {
-  id: number; title: string; type: string; status: string; priority: string; dueDate: string | null
+  id: number; title: string; type: string; status: string; priority: string; dueDate: string | null; overdue?: boolean
   aiSummary: string | null; suggestedAssignee: string | null; assignee: Person | null
   conversationId: number | null; companyName: string | null; tags: string[]; comments: Comment[]
 }
@@ -237,6 +237,15 @@ async function setStatus(task: Task, status: string) {
   await api.post(`/api/tasks/${task.id}/status`, { status })
   await Promise.all([loadBoard(), loadInbox()])
 }
+async function setDue(task: Task, dueDate: string | null) {
+  await api.post(`/api/tasks/${task.id}/due`, { dueDate })
+  await loadBoard()
+}
+function snooze(task: Task, days: number) {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  setDue(task, d.toISOString().slice(0, 10))
+}
 async function toggleTag(task: Task, tag: string) {
   const next = task.tags.includes(tag) ? task.tags.filter((t) => t !== tag) : [...task.tags, tag]
   await api.post(`/api/tasks/${task.id}/tags`, { tags: next })
@@ -373,7 +382,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
                   <div class="flex items-center gap-1.5 mb-1.5 pr-6 flex-wrap">
                     <span v-for="tag in t.tags.slice(0, 2)" :key="tag" class="text-[10px] px-1.5 py-0.5 rounded" :style="badgeStyle(tag)">{{ tag }}</span>
                     <span v-if="t.priority === 'high'" class="text-[10px] px-1.5 py-0.5 rounded" style="background:#eb5d4f;color:#fff">Hoch</span>
-                    <span v-if="t.dueDate" class="ml-auto text-[10px] text-neutral-400">⏱ {{ t.dueDate.slice(5) }}</span>
+                    <span v-if="t.dueDate" class="ml-auto text-[10px]" :class="t.overdue ? 'text-coral font-semibold' : 'text-neutral-400'">⏱ {{ t.dueDate.slice(5) }}</span>
                   </div>
                   <div class="text-[12.5px] leading-snug text-ebony">{{ t.title }}</div>
                 </article>
@@ -410,6 +419,20 @@ onBeforeUnmount(() => clearInterval(pollTimer))
               </div>
               <div class="mt-2 flex items-center gap-1 flex-wrap">
                 <button v-for="s in STATUS_KEYS" :key="s" @click="setStatus(selTask, s)" class="text-[10px] px-2 py-1 rounded-lg" :class="selTask.status === s ? 'bg-coral text-white' : 'bg-white text-neutral-600 border border-[#e6dad6]'">{{ STATUS[s] }}</button>
+              </div>
+              <!-- Fälligkeit / Wiedervorlage -->
+              <div class="mt-2 flex items-center gap-1.5 flex-wrap text-[11px]">
+                <span class="text-neutral-500">Fällig:</span>
+                <span v-if="selTask.dueDate" class="px-1.5 py-0.5 rounded" :class="selTask.overdue ? 'bg-coral text-white' : 'bg-white border border-[#e6dad6] text-neutral-600'">{{ selTask.dueDate }}<span v-if="selTask.overdue"> · überfällig</span></span>
+                <span v-else class="text-neutral-400">—</span>
+                <input type="date" :value="selTask.dueDate || ''" @change="setDue(selTask, ($event.target as HTMLInputElement).value || null)" class="border border-[#e0d2cd] rounded-lg px-1.5 py-0.5 text-[11px] bg-white ml-auto" />
+              </div>
+              <div class="mt-1 flex items-center gap-1 flex-wrap text-[10px]">
+                <span class="text-neutral-400">Wiedervorlage:</span>
+                <button @click="snooze(selTask, 1)" class="px-1.5 py-0.5 rounded bg-white border border-[#e6dad6] hover:border-coral">morgen</button>
+                <button @click="snooze(selTask, 3)" class="px-1.5 py-0.5 rounded bg-white border border-[#e6dad6] hover:border-coral">+3 Tage</button>
+                <button @click="snooze(selTask, 7)" class="px-1.5 py-0.5 rounded bg-white border border-[#e6dad6] hover:border-coral">nächste Woche</button>
+                <button v-if="selTask.dueDate" @click="setDue(selTask, null)" class="px-1.5 py-0.5 rounded text-neutral-400 hover:text-coral">entfernen</button>
               </div>
               <button v-if="selTask.status !== 'done'" @click="setStatus(selTask, 'done')" class="mt-2 w-full py-2 rounded-xl text-white text-sm font-medium" style="background:#3f9d6b">✓ Aufgabe erledigt</button>
               <!-- Tags -->
