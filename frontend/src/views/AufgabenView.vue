@@ -17,7 +17,7 @@ interface Comment { author: string; body: string; createdAt: string }
 interface Task {
   id: number; title: string; type: string; status: string; priority: string; dueDate: string | null; overdue?: boolean
   aiSummary: string | null; suggestedAssignee: string | null; assignee: Person | null
-  conversationId: number | null; companyName: string | null; tags: string[]; comments: Comment[]
+  conversationId: number | null; companyId: number | null; companyName: string | null; tags: string[]; comments: Comment[]
 }
 interface Att { id: number; name: string; size: number; type: string | null }
 interface Msg { dir: string; who: string; to: string; time: string; body: string; attachments?: Att[] }
@@ -33,6 +33,7 @@ const inboxFilter = ref<'alle' | 'neu'>('alle')
 const convs = ref<Conv[]>([])
 const tasks = ref<Task[]>([])
 const team = ref<Person[]>([])
+const companies = ref<{ id: number; name: string }[]>([])
 const group = ref<'person' | 'status'>('person')
 const showDone = ref(false)
 const loading = ref(true)
@@ -100,9 +101,10 @@ function selectMailbox(id: string) {
 }
 async function loadAll() {
   loading.value = true
-  const [mb, tm] = await Promise.all([api.get('/api/mailboxes'), api.get('/api/team')])
+  const [mb, tm, co] = await Promise.all([api.get('/api/mailboxes'), api.get('/api/team'), api.get('/api/companies')])
   mailboxes.value = mb.data
   team.value = tm.data
+  companies.value = co.data
   // Immer genau ein Postfach gewählt (kein „Alle") – Standard: Team-Postfach, sonst erstes.
   if (!mailboxes.value.find((m) => String(m.id) === mailboxFilter.value)) {
     const def = mailboxes.value[0]
@@ -245,6 +247,10 @@ function snooze(task: Task, days: number) {
   const d = new Date()
   d.setDate(d.getDate() + days)
   setDue(task, d.toISOString().slice(0, 10))
+}
+async function setCompany(task: Task, companyId: number | '') {
+  await api.post(`/api/tasks/${task.id}/company`, { companyId: companyId === '' ? null : companyId })
+  await loadBoard()
 }
 async function toggleTag(task: Task, tag: string) {
   const next = task.tags.includes(tag) ? task.tags.filter((t) => t !== tag) : [...task.tags, tag]
@@ -415,6 +421,13 @@ onBeforeUnmount(() => clearInterval(pollTimer))
                 <select :value="selTask.assignee?.id ?? ''" @change="assign(selTask, ($event.target as HTMLSelectElement).value === '' ? '' : Number(($event.target as HTMLSelectElement).value))" class="border border-[#e0d2cd] rounded-lg px-2 py-1 text-[11px] bg-white">
                   <option value="">— Unzugewiesen —</option>
                   <option v-for="p in team" :key="p.id" :value="p.id">{{ p.name }}</option>
+                </select>
+              </div>
+              <div class="mt-2 flex items-center gap-2 text-[11px]">
+                <span class="text-neutral-500">Kunde:</span>
+                <select :value="selTask.companyId ?? ''" @change="setCompany(selTask, ($event.target as HTMLSelectElement).value === '' ? '' : Number(($event.target as HTMLSelectElement).value))" class="border border-[#e0d2cd] rounded-lg px-2 py-1 text-[11px] bg-white">
+                  <option value="">— Kein Kunde —</option>
+                  <option v-for="co in companies" :key="co.id" :value="co.id">{{ co.name }}</option>
                 </select>
               </div>
               <div class="mt-2 flex items-center gap-1 flex-wrap">

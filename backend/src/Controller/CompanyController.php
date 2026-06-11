@@ -4,7 +4,9 @@ namespace App\Controller;
 
 use App\Entity\Company;
 use App\Entity\Contact;
+use App\Entity\Conversation;
 use App\Entity\Document;
+use App\Entity\Task;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -174,13 +176,14 @@ class CompanyController extends AbstractController
     /** @return array<string,mixed> */
     private function detail(Company $c): array
     {
+        $contactEntities = $this->em->getRepository(Contact::class)->findBy(['company' => $c], ['id' => 'ASC']);
         $contacts = array_map(fn (Contact $k) => [
             'id' => $k->id,
             'department' => $k->department ?: 'Sonstige',
             'name' => trim($k->firstName.' '.$k->lastName),
             'email' => $k->email,
             'phone' => $k->phone,
-        ], $this->em->getRepository(Contact::class)->findBy(['company' => $c], ['id' => 'ASC']));
+        ], $contactEntities);
 
         $docs = array_map(fn (Document $doc) => [
             'id' => $doc->id,
@@ -188,6 +191,53 @@ class CompanyController extends AbstractController
             'type' => $doc->type,
             'date' => $doc->date->format('Y-m-d'),
         ], $this->em->getRepository(Document::class)->findBy(['company' => $c], ['id' => 'DESC']));
+
+        // Verknüpfte Aufgaben (direkt am Kunden).
+        $tasks = $this->em->getRepository(Task::class)->findBy(['company' => $c], ['createdAt' => 'DESC']);
+        $taskOut = array_map(fn (Task $t) => [
+            'id' => $t->id,
+            'title' => $t->title,
+            'status' => $t->status,
+            'conversationId' => $t->conversation?->id,
+            'dueDate' => $t->dueDate?->format('Y-m-d'),
+            'overdue' => $t->dueDate && 'done' !== $t->status && $t->dueDate < new \DateTimeImmutable('today'),
+            'assignee' => $t->assignee ? (trim($t->assignee->getFirstName().' '.$t->assignee->getLastName()) ?: $t->assignee->getEmail()) : null,
+        ], $tasks);
+
+        // Verknüpfte Mails: aus den Aufgaben + über die E-Mail-Adressen der Kontakte.
+        $convMap = [];
+        foreach ($tasks as $t) {
+            if ($t->conversation?->id) {
+                $convMap[$t->conversation->id] = $t->conversation;
+            }
+        }
+        $emails = array_values(array_unique(array_filter(array_map(
+            fn (Contact $k) => $k->email ? mb_strtolower($k->email) : null,
+            $contactEntities
+        ))));
+        if ($emails) {
+            $rows = $this->em->createQueryBuilder()
+                ->select('cv')->from(Conversation::class, 'cv')
+                ->where('LOWER(cv.customerEmail) IN (:emails)')
+                ->setParameter('emails', $emails)->setMaxResults(50)
+                ->getQuery()->getResult();
+            foreach ($rows as $cv) {
+                $convMap[$cv->id] = $cv;
+            }
+        }
+        $convOut = [];
+        foreach ($convMap as $cv) {
+            $eff = $cv->emails->last() ? $cv->emails->last()->occurredAt : ($cv->lastMessageAt ?? $cv->createdAt);
+            $convOut[] = [
+                'id' => $cv->id,
+                'subject' => $cv->subject,
+                'from' => $cv->customerName ?: $cv->customerEmail,
+                'date' => $eff?->format('Y-m-d H:i'),
+                '_ts' => $eff?->getTimestamp() ?? 0,
+            ];
+        }
+        usort($convOut, fn ($a, $b) => $b['_ts'] <=> $a['_ts']);
+        $convOut = array_map(fn ($r) => ['id' => $r['id'], 'subject' => $r['subject'], 'from' => $r['from'], 'date' => $r['date']], $convOut);
 
         return [
             'id' => $c->id,
@@ -199,6 +249,8 @@ class CompanyController extends AbstractController
             'fields' => $c->customFields,
             'contacts' => $contacts,
             'documents' => $docs,
+            'tasks' => $taskOut,
+            'conversations' => $convOut,
         ];
     }
 }

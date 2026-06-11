@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import api from '../api'
 import { useAuth } from '../stores/auth'
 import AppTopbar from '../components/AppTopbar.vue'
@@ -9,12 +9,15 @@ import { confirmDialog, promptDialog } from '../composables/dialog'
 
 const auth = useAuth()
 const route = useRoute()
+const router = useRouter()
 
 interface Field { label: string; value: string }
 interface Contact { id: number; department: string; name: string; email: string | null; phone: string | null }
 interface Doc { id: number; name: string; type: string; date: string }
 interface CompanyListItem { id: number; name: string; subtitle: string | null; kind: string; tags: string[]; contactCount: number; docCount: number }
-interface CompanyDetail { id: number; name: string; subtitle: string | null; kind: string; tags: string[]; note: string | null; fields: Field[]; contacts: Contact[]; documents: Doc[] }
+interface RelTask { id: number; title: string; status: string; conversationId: number | null; dueDate: string | null; overdue: boolean; assignee: string | null }
+interface RelConv { id: number; subject: string; from: string | null; date: string | null }
+interface CompanyDetail { id: number; name: string; subtitle: string | null; kind: string; tags: string[]; note: string | null; fields: Field[]; contacts: Contact[]; documents: Doc[]; tasks: RelTask[]; conversations: RelConv[] }
 
 const companies = ref<CompanyListItem[]>([])
 const query = ref('')
@@ -244,6 +247,35 @@ onMounted(async () => {
               <button @click="delDoc(d)" title="Löschen" class="w-7 h-7 grid place-items-center rounded text-neutral-400 hover:bg-red-50 hover:text-red-600"><Icon name="trash" class="w-3.5 h-3.5" /></button>
             </div>
             <div v-if="!detail.documents.length" class="text-[12px] text-neutral-400">Noch keine Dokumente — „+ Dokument".</div>
+          </div>
+
+          <!-- Verknüpfte Aufgaben -->
+          <div class="mt-6">
+            <h3 class="text-[12px] uppercase tracking-wider text-neutral-400">Aufgaben <span class="text-coral">{{ detail.tasks.length }}</span></h3>
+            <div class="mt-2 space-y-1.5">
+              <button v-for="t in detail.tasks" :key="t.id" @click="t.conversationId && router.push({ path: '/aufgaben', query: { conv: t.conversationId } })"
+                class="w-full text-left flex items-center gap-2 bg-white border border-[#e6dad6] rounded-lg px-3 py-2 hover:border-coral">
+                <span class="w-2 h-2 rounded-full shrink-0" :style="t.status === 'done' ? 'background:#3f9d6b' : 'background:#eb5d4f'"></span>
+                <span class="text-[13px] text-ebony truncate flex-1">{{ t.title }}</span>
+                <span v-if="t.assignee" class="text-[11px] text-neutral-400 shrink-0">{{ t.assignee }}</span>
+                <span v-if="t.dueDate" class="text-[11px] shrink-0" :class="t.overdue ? 'text-coral font-semibold' : 'text-neutral-400'">⏱ {{ t.dueDate.slice(5) }}</span>
+              </button>
+              <div v-if="!detail.tasks.length" class="text-[12px] text-neutral-400">Keine verknüpften Aufgaben.</div>
+            </div>
+          </div>
+
+          <!-- Verknüpfte Mails -->
+          <div class="mt-6">
+            <h3 class="text-[12px] uppercase tracking-wider text-neutral-400">Mails <span class="text-coral">{{ detail.conversations.length }}</span></h3>
+            <div class="mt-2 space-y-1.5">
+              <button v-for="m in detail.conversations" :key="m.id" @click="router.push({ path: '/aufgaben', query: { conv: m.id } })"
+                class="w-full text-left flex items-center gap-2 bg-white border border-[#e6dad6] rounded-lg px-3 py-2 hover:border-coral">
+                <Icon name="envelope" class="w-4 h-4 text-navy shrink-0" />
+                <span class="text-[13px] text-ebony truncate flex-1">{{ m.subject || '(ohne Betreff)' }}</span>
+                <span class="text-[11px] text-neutral-400 shrink-0">{{ m.date }}</span>
+              </button>
+              <div v-if="!detail.conversations.length" class="text-[12px] text-neutral-400">Keine verknüpften Mails.</div>
+            </div>
           </div>
 
           <!-- Notiz -->

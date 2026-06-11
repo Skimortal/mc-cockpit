@@ -2,6 +2,7 @@
 
 namespace App\Controller;
 
+use App\Entity\Company;
 use App\Entity\Notification;
 use App\Entity\Task;
 use App\Entity\TaskComment;
@@ -65,6 +66,16 @@ class BoardController extends AbstractController
     {
         $d = json_decode($request->getContent(), true)['dueDate'] ?? null; // 'Y-m-d' oder null
         $task->dueDate = $d ? new \DateTimeImmutable($d.' 09:00') : null;
+        $this->em->flush();
+
+        return $this->json($this->taskArr($task));
+    }
+
+    #[Route('/api/tasks/{id}/company', methods: ['POST'])]
+    public function setCompany(Task $task, Request $request): JsonResponse
+    {
+        $companyId = json_decode($request->getContent(), true)['companyId'] ?? null;
+        $task->company = $companyId ? $this->em->getRepository(Company::class)->find($companyId) : null;
         $this->em->flush();
 
         return $this->json($this->taskArr($task));
@@ -146,6 +157,7 @@ class BoardController extends AbstractController
             'suggestedAssignee' => $t->suggestedAssignee,
             'assignee' => $t->assignee ? $this->userArr($t->assignee) : null,
             'conversationId' => $t->conversation?->id,
+            'companyId' => $t->company?->id,
             'companyName' => $t->company?->name,
             'tenderName' => $t->tender?->name,
             'tags' => $t->tags,
