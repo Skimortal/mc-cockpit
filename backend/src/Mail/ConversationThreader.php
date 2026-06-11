@@ -2,10 +2,12 @@
 
 namespace App\Mail;
 
+use App\Entity\Attachment;
 use App\Entity\Conversation;
 use App\Entity\Email;
 use App\Entity\Mailbox;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
  * Ordnet eine abgerufene Nachricht einer bestehenden Konversation zu (über
@@ -14,8 +16,10 @@ use Doctrine\ORM\EntityManagerInterface;
  */
 final class ConversationThreader
 {
-    public function __construct(private readonly EntityManagerInterface $em)
-    {
+    public function __construct(
+        private readonly EntityManagerInterface $em,
+        #[Autowire('%kernel.project_dir%')] private readonly string $projectDir = '',
+    ) {
     }
 
     /** @return Email|null  null = Duplikat (bereits vorhanden) */
@@ -23,8 +27,11 @@ final class ConversationThreader
     {
         $emailRepo = $this->em->getRepository(Email::class);
 
-        if ($emailRepo->findOneBy(['messageId' => $msg->messageId])) {
-            return null; // schon verarbeitet
+        if ($existing = $emailRepo->findOneBy(['messageId' => $msg->messageId])) {
+            // Schon verarbeitet – aber Anhänge ggf. nachrüsten (z. B. nach manuellem Abruf).
+            $this->saveAttachments($existing, $msg->attachments);
+
+            return null;
         }
 
         $conversation = $this->findConversation($mailbox, $msg) ?? $this->newConversation($mailbox, $msg);
@@ -52,7 +59,66 @@ final class ConversationThreader
 
         $this->em->flush();
 
+        $this->saveAttachments($email, $msg->attachments);
+
         return $email;
+    }
+
+    /**
+     * Speichert die (in Temp-Dateien vorliegenden) Anhänge unter var/attachments/<emailId>/.
+     * Idempotent: hat die Mail schon Anhänge, werden nur die Temp-Dateien aufgeräumt.
+     *
+     * @param list<array{name:string,mime:string,tmp:string,size:int}> $atts
+     */
+    private function saveAttachments(Email $email, array $atts): void
+    {
+        if (empty($atts) || !$email->id) {
+            foreach ($atts as $a) {
+                @unlink($a['tmp']);
+            }
+
+            return;
+        }
+
+        $repo = $this->em->getRepository(Attachment::class);
+        if ($repo->count(['email' => $email]) > 0) {
+            foreach ($atts as $a) {
+                @unlink($a['tmp']);
+            }
+
+            return;
+        }
+
+        $dir = $this->projectDir.'/var/attachments/'.$email->id;
+        @mkdir($dir, 0775, true);
+
+        $i = 0;
+        $saved = 0;
+        foreach ($atts as $a) {
+            if (!is_file($a['tmp'])) {
+                continue;
+            }
+            $safe = preg_replace('/[^\w.\- ]+/u', '_', $a['name']) ?: 'datei';
+            $safe = mb_substr(trim($safe), 0, 180);
+            $rel = $email->id.'/'.$i.'_'.$safe;
+            $dest = $this->projectDir.'/var/attachments/'.$rel;
+
+            if (@rename($a['tmp'], $dest) || (@copy($a['tmp'], $dest) && @unlink($a['tmp']))) {
+                $att = new Attachment();
+                $att->email = $email;
+                $att->filename = mb_substr($a['name'], 0, 255);
+                $att->contentType = mb_substr($a['mime'], 0, 150);
+                $att->size = $a['size'];
+                $att->path = $rel;
+                $this->em->persist($att);
+                ++$saved;
+            }
+            ++$i;
+        }
+
+        if ($saved > 0) {
+            $this->em->flush();
+        }
     }
 
     private function findConversation(Mailbox $mailbox, ParsedMessage $msg): ?Conversation

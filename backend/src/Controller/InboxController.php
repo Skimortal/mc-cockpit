@@ -2,6 +2,7 @@
 
 namespace App\Controller;
 
+use App\Entity\Attachment;
 use App\Entity\Conversation;
 use App\Entity\Mailbox;
 use App\Entity\Task;
@@ -11,8 +12,12 @@ use App\Mail\ImapPoller;
 use App\Service\Triage\EmailTriageService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\CurrentUser;
 
@@ -24,6 +29,7 @@ class InboxController extends AbstractController
         private readonly EmailTriageService $triage,
         private readonly ImapPoller $poller,
         private readonly ConversationThreader $threader,
+        #[Autowire('%kernel.project_dir%')] private readonly string $projectDir = '',
     ) {
     }
 
@@ -136,14 +142,20 @@ class InboxController extends AbstractController
             return $this->json(['error' => 'Kein Zugriff auf diese Konversation.'], 403);
         }
 
+        $attRepo = $this->em->getRepository(Attachment::class);
         $messages = [];
         foreach ($c->emails as $e) {
+            $atts = [];
+            foreach ($attRepo->findBy(['email' => $e], ['id' => 'ASC']) as $a) {
+                $atts[] = ['id' => $a->id, 'name' => $a->filename, 'size' => $a->size, 'type' => $a->contentType];
+            }
             $messages[] = [
                 'dir' => $e->direction,
                 'who' => 'out' === $e->direction ? 'Wir' : ($e->fromAddress ?: $c->customerName),
                 'to' => $e->toAddress,
                 'time' => $e->occurredAt->format('Y-m-d H:i'),
                 'body' => mb_substr(trim((string) ($e->bodyText ?: strip_tags((string) $e->bodyHtml))), 0, 8000),
+                'attachments' => $atts,
             ];
         }
 
@@ -189,6 +201,30 @@ class InboxController extends AbstractController
         }
 
         return $this->json(['ok' => true, 'taskId' => $task->id]);
+    }
+
+    /** Anhang herunterladen (sichtbarkeitsgeprüft). Frontend lädt per axios mit JWT als Blob. */
+    #[Route('/api/attachments/{id}/download', methods: ['GET'])]
+    public function downloadAttachment(Attachment $att, #[CurrentUser] ?User $user): Response
+    {
+        $c = $att->email?->conversation;
+        if (!$c) {
+            return new Response('Nicht gefunden.', 404);
+        }
+        $hasTask = isset($this->tasksByConversation()[$c->id]);
+        if (!$this->maySee($c, $user, $hasTask)) {
+            return new Response('Kein Zugriff.', 403);
+        }
+        $path = $this->projectDir.'/var/attachments/'.$att->path;
+        if (!is_file($path)) {
+            return new Response('Datei nicht vorhanden.', 404);
+        }
+
+        $response = new BinaryFileResponse($path);
+        $response->headers->set('Content-Type', $att->contentType ?: 'application/octet-stream');
+        $response->setContentDisposition(ResponseHeaderBag::DISPOSITION_ATTACHMENT, $att->filename);
+
+        return $response;
     }
 
     /** Posteingang-Sichtbarkeit: global ODER eigenes persönliches ODER (geteilt, weil Aufgabe existiert). */

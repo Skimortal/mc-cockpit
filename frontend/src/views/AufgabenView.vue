@@ -18,7 +18,8 @@ interface Task {
   aiSummary: string | null; suggestedAssignee: string | null; assignee: Person | null
   conversationId: number | null; companyName: string | null; tags: string[]; comments: Comment[]
 }
-interface Msg { dir: string; who: string; to: string; time: string; body: string }
+interface Att { id: number; name: string; size: number; type: string | null }
+interface Msg { dir: string; who: string; to: string; time: string; body: string; attachments?: Att[] }
 interface ConvDetail { id: number; subject: string; customerName: string; customerEmail: string; taskId: number | null; messages: Msg[] }
 
 const TAGS = ['Ausschreibung', 'Muster', 'Reklamation', 'Labor', 'Logistik', 'Rechnung', 'Etikett', 'ASN', 'Allgemein']
@@ -108,6 +109,20 @@ async function loadAll() {
   }
   await Promise.all([loadInbox(), loadBoard()])
   loading.value = false
+}
+function fmtSize(n: number) {
+  return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'
+}
+async function downloadAttachment(a: Att) {
+  const res = await api.get(`/api/attachments/${a.id}/download`, { responseType: 'blob' })
+  const url = URL.createObjectURL(res.data as Blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = a.name
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }
 const fetching = ref(false)
 const fetchMsg = ref('')
@@ -359,9 +374,18 @@ onBeforeUnmount(() => clearInterval(pollTimer))
                   <div class="text-[12px] font-semibold leading-tight" :class="x.m.dir === 'out' ? 'text-coral' : 'text-navy'">{{ x.m.dir === 'out' ? 'Wir' : x.m.who }}</div>
                   <div v-if="!openMsgs.has(x.i)" class="text-[11px] text-neutral-400 truncate">{{ x.m.body.slice(0, 80) }}</div>
                 </div>
+                <Icon v-if="x.m.attachments && x.m.attachments.length" name="paperclip" class="w-3.5 h-3.5 text-neutral-400 shrink-0" />
                 <span class="text-[10px] text-neutral-400 shrink-0">{{ fmtDate(x.m.time) }}</span>
               </div>
               <div v-if="openMsgs.has(x.i)" class="px-3 py-2.5 text-[12.5px] text-neutral-700 leading-relaxed whitespace-pre-wrap border-t" :class="x.m.dir === 'out' ? 'border-coral/20' : 'border-[#efe4df]'">{{ x.m.body }}</div>
+              <div v-if="openMsgs.has(x.i) && x.m.attachments && x.m.attachments.length" class="px-3 pb-2.5 pt-2 flex flex-wrap gap-1.5 border-t" :class="x.m.dir === 'out' ? 'border-coral/20' : 'border-[#efe4df]'">
+                <button v-for="a in x.m.attachments" :key="a.id" @click="downloadAttachment(a)" :title="`${a.name} herunterladen`"
+                  class="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-[#e0d2cd] bg-white hover:border-coral hover:text-coral max-w-[220px]">
+                  <Icon name="paperclip" class="w-3.5 h-3.5 shrink-0" />
+                  <span class="truncate">{{ a.name }}</span>
+                  <span class="text-neutral-400 shrink-0">{{ fmtSize(a.size) }}</span>
+                </button>
+              </div>
             </div>
           </div>
 

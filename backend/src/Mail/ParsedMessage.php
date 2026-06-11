@@ -16,6 +16,8 @@ final class ParsedMessage
         public readonly ?string $bodyText,
         public readonly ?string $bodyHtml,
         public readonly \DateTimeImmutable $date,
+        /** @var list<array{name:string,mime:string,tmp:string,size:int}> */
+        public readonly array $attachments = [],
     ) {
     }
 }

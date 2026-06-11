@@ -78,6 +78,41 @@ final class ImapPoller
             $messageId = '<generated-'.md5($this->str($message->getSubject()).($from->mail ?? '').($date?->format('c') ?? '')).'@cockpit>';
         }
 
+        // Anhänge auf die Platte (Temp) sichern -> wenig Speicherverbrauch.
+        $attachments = [];
+        try {
+            $i = 0;
+            $tmpDir = sys_get_temp_dir().'/cockpit-att';
+            foreach ($message->getAttachments() as $att) {
+                $name = $this->str($att->getName());
+                $mime = (string) ($att->getMimeType() ?: 'application/octet-stream');
+                // Krypto-Signaturen (S/MIME, PGP) sind kein echter Inhalt -> überspringen.
+                if ('smime.p7s' === $name || str_contains($mime, 'pkcs7') || str_contains($mime, 'pgp-signature')) {
+                    continue;
+                }
+                @mkdir($tmpDir, 0700, true);
+                $tmp = $tmpDir.'/'.bin2hex(random_bytes(8)).'.bin';
+                $att->save($tmpDir.'/', basename($tmp));
+                if (!is_file($tmp)) {
+                    continue;
+                }
+                $size = (int) filesize($tmp);
+                if ($size > 25 * 1024 * 1024) { // 25 MB Limit
+                    @unlink($tmp);
+                    continue;
+                }
+                $attachments[] = [
+                    'name' => $name ?: ('datei-'.$i),
+                    'mime' => $mime,
+                    'tmp' => $tmp,
+                    'size' => $size,
+                ];
+                ++$i;
+            }
+        } catch (\Throwable $e) {
+            $this->logger->error('IMAP attachment read failed', ['mailbox' => '', 'error' => $e->getMessage()]);
+        }
+
         return new ParsedMessage(
             messageId: $messageId,
             inReplyTo: $this->nullStr($message->getInReplyTo()),
@@ -89,6 +124,7 @@ final class ImapPoller
             bodyText: $message->getTextBody() ?: null,
             bodyHtml: $message->getHTMLBody() ?: null,
             date: $date ?? new \DateTimeImmutable(),
+            attachments: $attachments,
         );
     }
 
