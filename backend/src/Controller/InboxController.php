@@ -9,6 +9,7 @@ use App\Entity\Task;
 use App\Entity\User;
 use App\Mail\ConversationThreader;
 use App\Mail\ImapPoller;
+use App\Service\Attachment\AttachmentConverter;
 use App\Service\Triage\EmailTriageService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -29,6 +30,7 @@ class InboxController extends AbstractController
         private readonly EmailTriageService $triage,
         private readonly ImapPoller $poller,
         private readonly ConversationThreader $threader,
+        private readonly AttachmentConverter $converter,
         #[Autowire('%kernel.project_dir%')] private readonly string $projectDir = '',
     ) {
     }
@@ -225,6 +227,42 @@ class InboxController extends AbstractController
         $response->setContentDisposition(ResponseHeaderBag::DISPOSITION_ATTACHMENT, $att->filename);
 
         return $response;
+    }
+
+    /** Inline-Vorschau: Bilder direkt, PDFs direkt, Office-Dokumente per Gotenberg nach PDF. */
+    #[Route('/api/attachments/{id}/preview', methods: ['GET'])]
+    public function previewAttachment(Attachment $att, #[CurrentUser] ?User $user): Response
+    {
+        $c = $att->email?->conversation;
+        if (!$c) {
+            return new Response('Nicht gefunden.', 404);
+        }
+        $hasTask = isset($this->tasksByConversation()[$c->id]);
+        if (!$this->maySee($c, $user, $hasTask)) {
+            return new Response('Kein Zugriff.', 403);
+        }
+
+        if ($this->converter->isImage($att)) {
+            $img = $this->projectDir.'/var/attachments/'.$att->path;
+            if (!is_file($img)) {
+                return new Response('Datei nicht vorhanden.', 404);
+            }
+            $r = new BinaryFileResponse($img);
+            $r->headers->set('Content-Type', $att->contentType ?: 'application/octet-stream');
+            $r->setContentDisposition(ResponseHeaderBag::DISPOSITION_INLINE, $att->filename);
+
+            return $r;
+        }
+
+        $pdf = $this->converter->pdfPath($att);
+        if (!$pdf) {
+            return new Response('Keine Vorschau verfügbar.', 415);
+        }
+        $r = new BinaryFileResponse($pdf);
+        $r->headers->set('Content-Type', 'application/pdf');
+        $r->setContentDisposition(ResponseHeaderBag::DISPOSITION_INLINE, 'preview.pdf');
+
+        return $r;
     }
 
     /** Posteingang-Sichtbarkeit: global ODER eigenes persönliches ODER (geteilt, weil Aufgabe existiert). */

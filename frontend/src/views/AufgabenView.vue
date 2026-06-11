@@ -124,6 +124,50 @@ async function downloadAttachment(a: Att) {
   link.remove()
   URL.revokeObjectURL(url)
 }
+function canPreview(a: Att) {
+  const t = (a.type || '').toLowerCase()
+  const n = a.name.toLowerCase()
+  return t.startsWith('image/') || t.includes('pdf')
+    || t.includes('word') || t.includes('sheet') || t.includes('excel')
+    || t.includes('presentation') || t.includes('powerpoint') || t.includes('opendocument')
+    || /\.(pdf|docx?|xlsx?|pptx?|odt|ods|odp|rtf)$/.test(n)
+}
+const previewOpen = ref(false)
+const previewUrl = ref('')
+const previewName = ref('')
+const previewIsImage = ref(false)
+const previewLoading = ref(false)
+const previewAtt = ref<Att | null>(null)
+async function openPreview(a: Att) {
+  if (!canPreview(a)) {
+    await downloadAttachment(a)
+    return
+  }
+  previewAtt.value = a
+  previewName.value = a.name
+  previewIsImage.value = (a.type || '').toLowerCase().startsWith('image/')
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+  previewUrl.value = ''
+  previewLoading.value = true
+  previewOpen.value = true
+  try {
+    const res = await api.get(`/api/attachments/${a.id}/preview`, { responseType: 'blob' })
+    previewUrl.value = URL.createObjectURL(res.data as Blob)
+  } catch {
+    previewUrl.value = ''
+  } finally {
+    previewLoading.value = false
+  }
+}
+function closePreview() {
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+  previewUrl.value = ''
+  previewOpen.value = false
+  previewAtt.value = null
+}
+function previewDownload() {
+  if (previewAtt.value) downloadAttachment(previewAtt.value)
+}
 const fetching = ref(false)
 const fetchMsg = ref('')
 async function manualFetch() {
@@ -379,12 +423,17 @@ onBeforeUnmount(() => clearInterval(pollTimer))
               </div>
               <div v-if="openMsgs.has(x.i)" class="px-3 py-2.5 text-[12.5px] text-neutral-700 leading-relaxed whitespace-pre-wrap border-t" :class="x.m.dir === 'out' ? 'border-coral/20' : 'border-[#efe4df]'">{{ x.m.body }}</div>
               <div v-if="openMsgs.has(x.i) && x.m.attachments && x.m.attachments.length" class="px-3 pb-2.5 pt-2 flex flex-wrap gap-1.5 border-t" :class="x.m.dir === 'out' ? 'border-coral/20' : 'border-[#efe4df]'">
-                <button v-for="a in x.m.attachments" :key="a.id" @click="downloadAttachment(a)" :title="`${a.name} herunterladen`"
-                  class="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-[#e0d2cd] bg-white hover:border-coral hover:text-coral max-w-[220px]">
-                  <Icon name="paperclip" class="w-3.5 h-3.5 shrink-0" />
-                  <span class="truncate">{{ a.name }}</span>
-                  <span class="text-neutral-400 shrink-0">{{ fmtSize(a.size) }}</span>
-                </button>
+                <div v-for="a in x.m.attachments" :key="a.id" class="flex items-center rounded border border-[#e0d2cd] bg-white overflow-hidden max-w-[240px]">
+                  <button @click="openPreview(a)" :title="canPreview(a) ? `${a.name} – Vorschau` : `${a.name} – herunterladen`"
+                    class="flex items-center gap-1.5 text-[11px] px-2 py-1 hover:text-coral min-w-0">
+                    <Icon name="paperclip" class="w-3.5 h-3.5 shrink-0" />
+                    <span class="truncate">{{ a.name }}</span>
+                    <span class="text-neutral-400 shrink-0">{{ fmtSize(a.size) }}</span>
+                  </button>
+                  <button @click="downloadAttachment(a)" title="Herunterladen" class="px-1.5 py-1 border-l border-[#efe4df] text-neutral-400 hover:text-coral shrink-0">
+                    <Icon name="download" class="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -402,6 +451,26 @@ onBeforeUnmount(() => clearInterval(pollTimer))
             </div>
           </div>
         </template>
+      </div>
+    </div>
+
+    <!-- Anhang-Vorschau -->
+    <div v-if="previewOpen" class="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" @click.self="closePreview">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden">
+        <div class="flex items-center gap-2 px-4 py-2.5 border-b border-[#e6dad6]">
+          <Icon name="paperclip" class="w-4 h-4 text-navy shrink-0" />
+          <span class="text-[13px] font-semibold text-ebony truncate flex-1">{{ previewName }}</span>
+          <button @click="previewDownload" class="text-[12px] flex items-center gap-1 text-navy hover:text-coral px-2 py-1">
+            <Icon name="download" class="w-4 h-4" /> Herunterladen
+          </button>
+          <button @click="closePreview" class="text-neutral-400 hover:text-ebony text-2xl leading-none px-1">×</button>
+        </div>
+        <div class="flex-1 bg-neutral-100 overflow-auto flex items-center justify-center">
+          <div v-if="previewLoading" class="text-neutral-400 text-sm">Vorschau wird geladen…</div>
+          <img v-else-if="previewIsImage && previewUrl" :src="previewUrl" class="max-h-full max-w-full object-contain" />
+          <iframe v-else-if="previewUrl" :src="previewUrl" class="w-full h-full border-0"></iframe>
+          <div v-else class="text-neutral-400 text-sm px-6 text-center">Keine Vorschau verfügbar – bitte herunterladen.</div>
+        </div>
       </div>
     </div>
   </div>

@@ -2,6 +2,7 @@
 
 namespace App\Service\Search;
 
+use App\Entity\Attachment;
 use App\Entity\Company;
 use App\Entity\Conversation;
 use App\Entity\Task;
@@ -98,8 +99,15 @@ final class SearchIndexer
     public function convDoc(Conversation $c): array
     {
         $body = '';
+        $attRepo = $this->em->getRepository(Attachment::class);
         foreach ($c->emails as $e) {
             $body .= ' '.($e->bodyText ?: strip_tags((string) $e->bodyHtml));
+            foreach ($attRepo->findBy(['email' => $e]) as $a) {
+                $body .= ' '.$a->filename;
+                if ($a->extractedText && '[' !== ($a->extractedText[0] ?? '')) {
+                    $body .= ' '.$a->extractedText;
+                }
+            }
         }
         $mb = $c->mailbox;
         $hasTask = $this->em->getRepository(Task::class)->count(['conversation' => $c]) > 0;
@@ -109,7 +117,7 @@ final class SearchIndexer
             'subject' => $c->subject,
             'customer' => trim(($c->customerName ?? '').' '.($c->customerEmail ?? '')),
             'from' => $c->customerName ?: $c->customerEmail,
-            'body' => mb_substr(trim($body), 0, 8000),
+            'body' => mb_substr(trim($body), 0, 30000),
             'mailboxScope' => $mb?->scope ?? 'none',
             'ownerId' => $mb?->owner?->getId() ?? 0,
             'hasTask' => $hasTask,

@@ -12,6 +12,8 @@ services:
       DATABASE_URL: "postgresql://cockpit:cockpit@db:5432/cockpit?serverVersion=16&charset=utf8"
       MEILI_HOST: "http://meili:7700"
       MEILI_KEY: "devmasterkey"
+      TIKA_URL: "http://tika:9998"
+      GOTENBERG_URL: "http://gotenberg:3000"
     depends_on:
       db:
         condition: service_healthy
@@ -21,7 +23,7 @@ services:
     build: .
     container_name: mc_cockpit_mailsync
     working_dir: /var/www/html
-    command: sh -c "sleep 12; while true; do php bin/console app:fetch-mail --since-days=3 --limit=40 >/dev/null 2>&1 || true; sleep 90; done"
+    command: sh -c "sleep 12; while true; do php bin/console app:fetch-mail --since-days=3 --limit=40 >/dev/null 2>&1 || true; php bin/console app:extract-attachments --limit=30 >/dev/null 2>&1 || true; sleep 90; done"
     volumes:
       - ../backend:/var/www/html:cached
       - ./php-custom.ini:/usr/local/etc/php/conf.d/zz-custom.ini:ro
@@ -29,6 +31,8 @@ services:
       DATABASE_URL: "postgresql://cockpit:cockpit@db:5432/cockpit?serverVersion=16&charset=utf8"
       MEILI_HOST: "http://meili:7700"
       MEILI_KEY: "devmasterkey"
+      TIKA_URL: "http://tika:9998"
+      GOTENBERG_URL: "http://gotenberg:3000"
     depends_on:
       db:
         condition: service_healthy
@@ -71,6 +75,16 @@ services:
       - "7700:7700"
     volumes:
       - meili_data:/meili_data
+
+  tika:
+    image: apache/tika:3.0.0.0-full
+    container_name: mc_cockpit_tika
+    restart: unless-stopped
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: mc_cockpit_gotenberg
+    restart: unless-stopped
 
 volumes:
   db_data:
