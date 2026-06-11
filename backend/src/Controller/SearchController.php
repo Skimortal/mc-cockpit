@@ -20,6 +20,9 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
  */
 class SearchController extends AbstractController
 {
+    private const HL_PRE = '⟦';
+    private const HL_POST = '⟧';
+
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly SearchIndexer $indexer,
@@ -48,33 +51,61 @@ class SearchController extends AbstractController
         $uid = $user?->getId() ?? 0;
         $c = $this->indexer->client();
 
-        $tasks = $c->index(SearchIndexer::TASKS)->search($q, ['limit' => $limit])->getHits();
+        $hl = ['highlightPreTag' => self::HL_PRE, 'highlightPostTag' => self::HL_POST];
+
+        $tasks = $c->index(SearchIndexer::TASKS)->search($q, [
+            'limit' => $limit,
+            'attributesToHighlight' => ['title', 'summary'],
+            'attributesToCrop' => ['summary'], 'cropLength' => 24,
+        ] + $hl)->getHits();
+
         $filter = sprintf('mailboxScope = "global" OR ownerId = %d OR hasTask = true', $uid);
         $convs = $c->index(SearchIndexer::CONVERSATIONS)->search($q, [
+            'limit' => $limit, 'filter' => $filter,
+            'attributesToHighlight' => ['subject', 'body'],
+            'attributesToCrop' => ['body'], 'cropLength' => 26,
+        ] + $hl)->getHits();
+
+        $companies = $c->index(SearchIndexer::COMPANIES)->search($q, [
             'limit' => $limit,
-            'filter' => $filter,
-            'attributesToCrop' => ['body'],
-            'cropLength' => 26,
-            'attributesToHighlight' => ['body'],
-            'highlightPreTag' => '«',
-            'highlightPostTag' => '»',
-        ])->getHits();
-        $companies = $c->index(SearchIndexer::COMPANIES)->search($q, ['limit' => $limit])->getHits();
+            'attributesToHighlight' => ['name', 'subtitle', 'fields'],
+            'attributesToCrop' => ['fields'], 'cropLength' => 22,
+        ] + $hl)->getHits();
 
         return [
-            'tasks' => array_map(fn ($h) => ['id' => $h['id'], 'title' => $h['title'] ?? '', 'status' => $h['status'] ?? null, 'conversationId' => $h['conversationId'] ?? null], $tasks),
+            'tasks' => array_map(fn ($h) => [
+                'id' => $h['id'], 'title' => $h['title'] ?? '', 'titleHl' => $this->full($h, 'title'),
+                'status' => $h['status'] ?? null, 'conversationId' => $h['conversationId'] ?? null,
+                'snippet' => $this->crop($h, 'summary'),
+            ], $tasks),
             'conversations' => array_map(fn ($h) => [
-                'id' => $h['id'], 'subject' => $h['subject'] ?? '', 'from' => $h['from'] ?? null, 'hasTask' => $h['hasTask'] ?? false,
+                'id' => $h['id'], 'subject' => $h['subject'] ?? '', 'subjectHl' => $this->full($h, 'subject'),
+                'from' => $h['from'] ?? null, 'hasTask' => $h['hasTask'] ?? false,
                 'date' => $h['date'] ?? null, 'mailbox' => $h['mailboxName'] ?? null,
-                'snippet' => $this->snippet($h['_formatted']['body'] ?? ''),
+                'snippet' => $this->crop($h, 'body'),
             ], $convs),
-            'companies' => array_map(fn ($h) => ['id' => $h['id'], 'name' => $h['name'] ?? '', 'subtitle' => $h['subtitle'] ?? null], $companies),
+            'companies' => array_map(fn ($h) => [
+                'id' => $h['id'], 'name' => $h['name'] ?? '', 'nameHl' => $this->full($h, 'name'),
+                'subtitle' => $h['subtitle'] ?? null, 'snippet' => $this->crop($h, 'fields'),
+            ], $companies),
         ];
     }
 
-    private function snippet(string $s): string
+    /** Volltext-Feld mit Hervorhebungs-Markierungen (gekürzt). */
+    private function full(array $h, string $f): string
     {
-        return mb_substr(trim((string) preg_replace('/\s+/u', ' ', $s)), 0, 220);
+        return mb_substr(trim((string) ($h['_formatted'][$f] ?? $h[$f] ?? '')), 0, 300);
+    }
+
+    /** Gekürztes Snippet eines Feldes (Whitespace normalisiert), nur wenn ein Treffer drinsteckt. */
+    private function crop(array $h, string $f): string
+    {
+        $s = trim((string) preg_replace('/\s+/u', ' ', (string) ($h['_formatted'][$f] ?? '')));
+        if (!str_contains($s, self::HL_PRE)) {
+            return ''; // kein Treffer in diesem Feld -> kein Snippet
+        }
+
+        return mb_substr($s, 0, 240);
     }
 
     /** Postgres-Fallback (Teilstring). @return array<string,mixed> */
@@ -94,7 +125,7 @@ class SearchController extends AbstractController
             ->where('LOWER(t.title) LIKE :q OR LOWER(t.aiSummary) LIKE :q')
             ->setParameter('q', $like)->orderBy('t.createdAt', 'DESC')->setMaxResults(8)
             ->getQuery()->getResult();
-        $taskOut = array_map(fn (Task $t) => ['id' => $t->id, 'title' => $t->title, 'status' => $t->status, 'conversationId' => $t->conversation?->id], $tasks);
+        $taskOut = array_map(fn (Task $t) => ['id' => $t->id, 'title' => $t->title, 'titleHl' => $t->title, 'status' => $t->status, 'conversationId' => $t->conversation?->id, 'snippet' => ''], $tasks);
 
         $convs = $this->em->createQueryBuilder()
             ->select('DISTINCT c')->from(Conversation::class, 'c')->leftJoin('c.emails', 'e')
@@ -106,7 +137,7 @@ class SearchController extends AbstractController
             if (!$this->maySee($c, $user, isset($taskConvIds[$c->id]))) {
                 continue;
             }
-            $convOut[] = ['id' => $c->id, 'subject' => $c->subject, 'from' => $c->customerName ?: $c->customerEmail, 'hasTask' => isset($taskConvIds[$c->id]), 'date' => $c->lastMessageAt?->format('Y-m-d H:i'), 'mailbox' => $c->mailbox?->name, 'snippet' => ''];
+            $convOut[] = ['id' => $c->id, 'subject' => $c->subject, 'subjectHl' => $c->subject, 'from' => $c->customerName ?: $c->customerEmail, 'hasTask' => isset($taskConvIds[$c->id]), 'date' => $c->lastMessageAt?->format('Y-m-d H:i'), 'mailbox' => $c->mailbox?->name, 'snippet' => ''];
             if (\count($convOut) >= $limit) {
                 break;
             }
@@ -119,7 +150,7 @@ class SearchController extends AbstractController
                 $hay .= ' '.mb_strtolower(($f['label'] ?? '').' '.($f['value'] ?? ''));
             }
             if (str_contains($hay, mb_strtolower($q))) {
-                $companyOut[] = ['id' => $co->id, 'name' => $co->name, 'subtitle' => $co->subtitle];
+                $companyOut[] = ['id' => $co->id, 'name' => $co->name, 'nameHl' => $co->name, 'subtitle' => $co->subtitle, 'snippet' => ''];
             }
             if (\count($companyOut) >= 8) {
                 break;
