@@ -94,7 +94,7 @@ final class AttachmentConverter
             }
             $w = imagesx($img);
             $h = imagesy($img);
-            $max = 480;
+            $max = 800;
             $scale = min(1.0, $max / max(1, max($w, $h)));
             $nw = max(1, (int) round($w * $scale));
             $nh = max(1, (int) round($h * $scale));
@@ -115,7 +115,7 @@ final class AttachmentConverter
     {
         // pdftoppm -singlefile hängt ".png" an den Prefix an -> Prefix ohne Endung übergeben.
         $prefix = preg_replace('/\.png$/', '', $cache);
-        $cmd = sprintf('pdftoppm -png -singlefile -f 1 -l 1 -scale-to 480 %s %s 2>/dev/null',
+        $cmd = sprintf('pdftoppm -png -singlefile -f 1 -l 1 -scale-to 800 %s %s 2>/dev/null',
             escapeshellarg($pdf), escapeshellarg((string) $prefix));
         @exec($cmd);
 

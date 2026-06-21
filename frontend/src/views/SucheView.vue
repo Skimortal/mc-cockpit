@@ -166,10 +166,10 @@ onMounted(run)
               <button v-for="d in limited('documents', res.documents)" :key="d.kind + d.id" @click="openDoc(d)" :disabled="d.pruned"
                 class="w-full text-left px-4 py-2.5 hover:bg-beige-soft flex gap-3 disabled:hover:bg-transparent disabled:cursor-default">
                 <!-- Thumbnail (Vorschau vor dem Klick) mit Typ-Badge als Fallback -->
-                <DocThumb v-if="d.preview && !d.pruned" :kind="d.kind" :id="d.id" class="w-14 h-[72px]">
-                  <span class="text-[9px] font-semibold uppercase text-coral">{{ d.type || (d.kind === 'attachment' ? '✉' : 'DOC') }}</span>
+                <DocThumb v-if="d.preview && !d.pruned" :kind="d.kind" :id="d.id" class="w-28 h-36">
+                  <span class="text-[12px] font-semibold uppercase text-coral">{{ d.type || (d.kind === 'attachment' ? '✉' : 'DOC') }}</span>
                 </DocThumb>
-                <span v-else class="w-14 h-[72px] shrink-0 rounded border border-[#e6dad6] bg-beige-soft grid place-items-center text-[10px] font-semibold uppercase text-neutral-400">{{ d.type || (d.kind === 'attachment' ? '✉' : 'DOC') }}</span>
+                <span v-else class="w-28 h-36 shrink-0 rounded border border-[#e6dad6] bg-beige-soft grid place-items-center text-[12px] font-semibold uppercase text-neutral-400">{{ d.type || (d.kind === 'attachment' ? '✉' : 'DOC') }}</span>
 
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-2">
