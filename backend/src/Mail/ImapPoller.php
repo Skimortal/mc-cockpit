@@ -118,14 +118,29 @@ final class ImapPoller
             inReplyTo: $this->nullStr($message->getInReplyTo()),
             references: $this->nullStr($message->getReferences()),
             fromAddress: $from?->mail,
-            fromName: $from?->personal ?: null,
+            fromName: self::mimeDecode($this->str($from?->personal)) ?: null,
             toAddress: $to?->mail,
-            subject: $this->str($message->getSubject()),
+            subject: self::mimeDecode($this->str($message->getSubject())),
             bodyText: $message->getTextBody() ?: null,
             bodyHtml: $message->getHTMLBody() ?: null,
             date: $date ?? new \DateTimeImmutable(),
             attachments: $attachments,
         );
+    }
+
+    /** Dekodiert RFC-2047 encoded-words (=?utf-8?Q?…?=) zu UTF-8. Robust gegen kaputte/teilweise Header. */
+    public static function mimeDecode(string $s): string
+    {
+        if ('' === $s || !str_contains($s, '=?')) {
+            return $s;
+        }
+        $d = @iconv_mime_decode($s, \ICONV_MIME_DECODE_CONTINUE_ON_ERROR, 'UTF-8');
+        if (\is_string($d) && '' !== trim($d) && !str_contains($d, '=?')) {
+            return $d;
+        }
+        $d2 = @mb_decode_mimeheader($s);
+
+        return ('' !== (string) $d2) ? $d2 : $s;
     }
 
     private function encryption(string $enc): string|false

@@ -38,7 +38,7 @@ final class ConversationThreader
 
         $email = new Email();
         $email->conversation = $conversation;
-        $email->direction = 'in';
+        $email->direction = $this->isOwn($msg->fromAddress) ? 'out' : 'in';
         $email->fromAddress = $msg->fromAddress;
         $email->toAddress = $msg->toAddress;
         $email->subject = $msg->subject;
@@ -52,9 +52,14 @@ final class ConversationThreader
 
         $conversation->lastMessageAt = $msg->date;
         $conversation->status = 'open';
-        if (null === $conversation->customerEmail && $msg->fromAddress) {
-            $conversation->customerEmail = $msg->fromAddress;
-            $conversation->customerName = $msg->fromName;
+        // Kunde = externe Partei. Falls noch nicht gesetzt oder bisher faelschlich das
+        // eigene Postfach gespeichert wurde, aus dieser Nachricht neu bestimmen.
+        if (null === $conversation->customerEmail || $this->isOwn($conversation->customerEmail)) {
+            [$cEmail, $cName] = $this->resolveCustomer($msg);
+            if ($cEmail) {
+                $conversation->customerEmail = $cEmail;
+                $conversation->customerName = $cName;
+            }
         }
 
         $this->em->flush();
@@ -121,6 +126,45 @@ final class ConversationThreader
         }
     }
 
+    /** @var array<string,true>|null */
+    private ?array $ownAddrCache = null;
+
+    /** Eigene Postfach-Adressen (lowercase) – nie als „Kunde" verwenden. */
+    private function isOwn(?string $addr): bool
+    {
+        if (!$addr) {
+            return false;
+        }
+        if (null === $this->ownAddrCache) {
+            $this->ownAddrCache = [];
+            foreach ($this->em->getRepository(Mailbox::class)->findAll() as $mb) {
+                if ($mb->email) {
+                    $this->ownAddrCache[mb_strtolower($mb->email)] = true;
+                }
+            }
+        }
+
+        return isset($this->ownAddrCache[mb_strtolower($addr)]);
+    }
+
+    /**
+     * Bestimmt die externe Gegenpartei einer Nachricht: bei eingehenden Mails der
+     * Absender, bei ausgehenden (Absender = eigenes Postfach) der Empfänger.
+     *
+     * @return array{0:?string,1:?string} [email, name]
+     */
+    private function resolveCustomer(ParsedMessage $msg): array
+    {
+        if ($msg->fromAddress && !$this->isOwn($msg->fromAddress)) {
+            return [$msg->fromAddress, $msg->fromName];
+        }
+        if ($msg->toAddress && !$this->isOwn($msg->toAddress)) {
+            return [$msg->toAddress, null];
+        }
+
+        return [$msg->fromAddress, $msg->fromName];
+    }
+
     private function findConversation(Mailbox $mailbox, ParsedMessage $msg): ?Conversation
     {
         $emailRepo = $this->em->getRepository(Email::class);
@@ -145,10 +189,11 @@ final class ConversationThreader
 
         // 3) Fallback: offene Konversation mit gleichem (normalisiertem) Betreff + Absender
         $normalized = $this->normalizeSubject($msg->subject);
-        if ('' !== $normalized && $msg->fromAddress) {
+        [$custEmail] = $this->resolveCustomer($msg);
+        if ('' !== $normalized && $custEmail) {
             $candidates = $this->em->getRepository(Conversation::class)->findBy([
                 'mailbox' => $mailbox,
-                'customerEmail' => $msg->fromAddress,
+                'customerEmail' => $custEmail,
             ]);
             foreach ($candidates as $c) {
                 if ($this->normalizeSubject($c->subject) === $normalized) {
@@ -165,8 +210,9 @@ final class ConversationThreader
         $c = new Conversation();
         $c->mailbox = $mailbox;
         $c->subject = $msg->subject;
-        $c->customerEmail = $msg->fromAddress;
-        $c->customerName = $msg->fromName;
+        [$cEmail, $cName] = $this->resolveCustomer($msg);
+        $c->customerEmail = $cEmail;
+        $c->customerName = $cName;
         $c->rootMessageId = $msg->messageId;
         $c->status = 'open';
         $c->lastMessageAt = $msg->date;

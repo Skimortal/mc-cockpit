@@ -323,10 +323,13 @@ onMounted(async () => {
             </div>
 
             <!-- Drop-Zone / Leerzustand -->
-            <div class="rounded-lg border-2 border-dashed px-3 py-3 text-center text-[12px] transition-colors"
-              :class="dragOver ? 'border-coral bg-coral/5 text-coral' : 'border-[#e0d2cd] text-neutral-400'">
-              {{ dragOver ? 'Dateien hier ablegen …' : 'Dateien hierher ziehen oder „+ Dateien hochladen"' }}
-            </div>
+            <button type="button" @click="triggerUpload"
+              class="w-full rounded-xl border-2 border-dashed px-4 py-6 flex flex-col items-center gap-1.5 transition-colors cursor-pointer"
+              :class="dragOver ? 'border-coral bg-coral/10 text-coral scale-[1.01]' : 'border-[#d8c7c1] text-neutral-500 hover:border-coral hover:text-coral hover:bg-coral/5'">
+              <Icon name="upload" class="w-6 h-6" :class="dragOver ? 'text-coral' : 'text-neutral-400'" />
+              <span class="text-[13px] font-medium">{{ dragOver ? 'Jetzt loslassen zum Hochladen' : 'Dateien hierher ziehen' }}</span>
+              <span v-if="!dragOver" class="text-[11px] text-neutral-400">oder klicken zum Auswählen · mehrere möglich</span>
+            </button>
           </div>
 
           <!-- Verknüpfte Aufgaben -->

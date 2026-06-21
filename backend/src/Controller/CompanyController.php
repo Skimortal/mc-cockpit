@@ -6,6 +6,7 @@ use App\Entity\Company;
 use App\Entity\Contact;
 use App\Entity\Conversation;
 use App\Entity\Document;
+use App\Entity\Mailbox;
 use App\Entity\Task;
 use App\Service\Attachment\AttachmentConverter;
 use App\Service\Attachment\DocumentExtractor;
@@ -324,10 +325,18 @@ class CompanyController extends AbstractController
                 $convMap[$t->conversation->id] = $t->conversation;
             }
         }
+        // Eigene Postfach-Adressen ausschließen: ein Kontakt mit z. B. office@hdv-stojakovic.at
+        // würde sonst ALLE Konversationen dieses Postfachs an die Firma hängen.
+        $own = [];
+        foreach ($this->em->getRepository(Mailbox::class)->findAll() as $mb) {
+            if ($mb->email) {
+                $own[mb_strtolower($mb->email)] = true;
+            }
+        }
         $emails = array_values(array_unique(array_filter(array_map(
             fn (Contact $k) => $k->email ? mb_strtolower($k->email) : null,
             $contactEntities
-        ))));
+        ), fn (?string $e) => $e && !isset($own[$e]))));
         if ($emails) {
             $rows = $this->em->createQueryBuilder()
                 ->select('cv')->from(Conversation::class, 'cv')
