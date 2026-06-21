@@ -6,6 +6,7 @@ import { useAuth } from '../stores/auth'
 import AppTopbar from '../components/AppTopbar.vue'
 import Icon from '../components/Icon.vue'
 import { confirmDialog, promptDialog } from '../composables/dialog'
+import { mdHtml } from '../composables/markdown'
 
 const auth = useAuth()
 const route = useRoute()
@@ -613,8 +614,9 @@ onBeforeUnmount(() => clearInterval(pollTimer))
               <div v-if="explaining" class="mt-3 flex items-center gap-2 p-3 rounded-xl bg-beige-soft text-[12px] text-neutral-500">
                 <span class="inline-block w-4 h-4 border-2 border-coral/30 border-t-coral rounded-full animate-spin shrink-0"></span> KI liest den Verlauf…
               </div>
-              <div v-else-if="explanation" class="mt-3 p-3 rounded-xl bg-navy/5 border border-navy/15 text-[12.5px] text-ebony whitespace-pre-wrap leading-relaxed">
-                <div class="text-[10px] uppercase tracking-wide text-navy/60 mb-1">🔎 KI-Erklärung</div>{{ explanation }}
+              <div v-else-if="explanation" class="mt-3 p-3 rounded-xl bg-navy/5 border border-navy/15 text-[12.5px] text-ebony leading-relaxed">
+                <div class="text-[10px] uppercase tracking-wide text-navy/60 mb-1">🔎 KI-Erklärung</div>
+                <div v-html="mdHtml(explanation)"></div>
               </div>
             </div>
 
