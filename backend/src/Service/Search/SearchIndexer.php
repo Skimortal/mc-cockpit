@@ -68,10 +68,18 @@ final class SearchIndexer
         if ($docs) {
             $this->client->index(self::DOCUMENTS)->addDocuments(array_map([$this, 'documentDoc'], array_values($docs)), 'id');
         }
-        $atts = array_filter($this->em->getRepository(Attachment::class)->findAll(), fn (Attachment $a) => null !== $a->id && $a->email?->conversation);
+        $atts = array_filter($this->em->getRepository(Attachment::class)->findAll(), fn (Attachment $a) => null !== $a->id && $a->email?->conversation && !$this->isIndexJunk($a));
+        $this->safe(fn () => $this->client->index(self::ATTACHMENTS)->deleteAllDocuments());
         if ($atts) {
             $this->client->index(self::ATTACHMENTS)->addDocuments(array_map([$this, 'attachmentDoc'], array_values($atts)), 'id');
         }
+    }
+
+    /** Icons/Signatur-Schnipsel u. Ä. sind keine sinnvollen Dokument-Treffer. */
+    private function isIndexJunk(Attachment $a): bool
+    {
+        return str_contains((string) $a->contentType, 'icon')
+            || (bool) preg_match('/\.ico$/i', $a->filename);
     }
 
     public function indexTask(Task $t): void
@@ -90,7 +98,7 @@ final class SearchIndexer
         $attRepo = $this->em->getRepository(Attachment::class);
         foreach ($c->emails as $e) {
             foreach ($attRepo->findBy(['email' => $e]) as $a) {
-                if (null !== $a->id) {
+                if (null !== $a->id && !$this->isIndexJunk($a)) {
                     $docs[] = $this->attachmentDoc($a);
                 }
             }
