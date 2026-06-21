@@ -9,7 +9,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-#[AsCommand(name: 'app:search-reindex', description: 'Baut den Meilisearch-Index für Aufgaben, Konversationen und Kunden neu auf.')]
+#[AsCommand(name: 'app:search-reindex', description: 'Baut den Meilisearch-Index für Aufgaben, Konversationen, Kunden und Dokumente neu auf.')]
 class ReindexCommand extends Command
 {
     public function __construct(private readonly SearchIndexer $indexer)

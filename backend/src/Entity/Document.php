@@ -4,7 +4,7 @@ namespace App\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
 
-/** Dokument zu einer Firma (Metadaten; Datei-Upload folgt später). */
+/** Hochgeladenes Dokument zu einer Firma (Datei liegt unter var/documents/, Text per Tika durchsuchbar). */
 #[ORM\Entity]
 class Document
 {
@@ -22,9 +22,19 @@ class Document
     #[ORM\Column(length: 20)]
     public string $type = 'PDF';
 
-    /** optionaler Pfad/URL (später: echter Upload). */
+    /** Pfad relativ zu var/documents/, z. B. "12/0_angebot.pdf" (null = nur Metadaten). */
     #[ORM\Column(length: 500, nullable: true)]
     public ?string $path = null;
+
+    #[ORM\Column(length: 150, nullable: true)]
+    public ?string $contentType = null;
+
+    #[ORM\Column]
+    public int $size = 0;
+
+    /** Extrahierter Text (für die Volltextsuche; per Tika gefüllt). */
+    #[ORM\Column(type: 'text', nullable: true)]
+    public ?string $extractedText = null;
 
     #[ORM\Column(type: 'date_immutable')]
     public \DateTimeImmutable $date;

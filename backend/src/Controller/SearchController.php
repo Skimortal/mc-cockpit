@@ -5,6 +5,7 @@ namespace App\Controller;
 use App\Entity\Attachment;
 use App\Entity\Company;
 use App\Entity\Conversation;
+use App\Entity\Document;
 use App\Entity\Task;
 use App\Entity\User;
 use App\Service\Search\SearchIndexer;
@@ -36,7 +37,7 @@ class SearchController extends AbstractController
         $q = trim((string) $request->query->get('q', ''));
         $limit = min(50, max(1, (int) $request->query->get('limit', 8)));
         if (mb_strlen($q) < 2) {
-            return $this->json(['tasks' => [], 'conversations' => [], 'companies' => []]);
+            return $this->json(['tasks' => [], 'conversations' => [], 'companies' => [], 'documents' => []]);
         }
 
         try {
@@ -73,6 +74,12 @@ class SearchController extends AbstractController
             'attributesToCrop' => ['fields'], 'cropLength' => 22,
         ] + $hl)->getHits();
 
+        $documents = $c->index(SearchIndexer::DOCUMENTS)->search($q, [
+            'limit' => $limit,
+            'attributesToHighlight' => ['name', 'companyName', 'body'],
+            'attributesToCrop' => ['body'], 'cropLength' => 26,
+        ] + $hl)->getHits();
+
         return [
             'tasks' => array_map(fn ($h) => [
                 'id' => $h['id'], 'title' => $h['title'] ?? '', 'titleHl' => $this->full($h, 'title'),
@@ -90,6 +97,13 @@ class SearchController extends AbstractController
                 'id' => $h['id'], 'name' => $h['name'] ?? '', 'nameHl' => $this->full($h, 'name'),
                 'subtitle' => $h['subtitle'] ?? null, 'snippet' => $this->crop($h, 'fields'),
             ], $companies),
+            'documents' => array_map(fn ($h) => [
+                'id' => $h['id'], 'name' => $h['name'] ?? '', 'nameHl' => $this->full($h, 'name'),
+                'type' => $h['type'] ?? null,
+                'companyId' => $h['companyId'] ?? null, 'companyName' => $h['companyName'] ?? null,
+                'snippet' => $this->crop($h, 'body'),
+                'preview' => $this->previewable('', (string) ($h['name'] ?? '')),
+            ], $documents),
         ];
     }
 
@@ -188,7 +202,19 @@ class SearchController extends AbstractController
             }
         }
 
-        return ['tasks' => $taskOut, 'conversations' => $convOut, 'companies' => $companyOut];
+        $docs = $this->em->createQueryBuilder()
+            ->select('d')->from(Document::class, 'd')
+            ->where('d.path IS NOT NULL')
+            ->andWhere('LOWER(d.name) LIKE :q OR LOWER(d.extractedText) LIKE :q')
+            ->setParameter('q', $like)->setMaxResults(8)
+            ->getQuery()->getResult();
+        $docOut = array_map(fn (Document $d) => [
+            'id' => $d->id, 'name' => $d->name, 'nameHl' => $d->name, 'type' => $d->type,
+            'companyId' => $d->company?->id, 'companyName' => $d->company?->name,
+            'snippet' => '', 'preview' => $this->previewable((string) $d->contentType, $d->name),
+        ], $docs);
+
+        return ['tasks' => $taskOut, 'conversations' => $convOut, 'companies' => $companyOut, 'documents' => $docOut];
     }
 
     private function maySee(Conversation $c, ?User $user, bool $hasTask): bool

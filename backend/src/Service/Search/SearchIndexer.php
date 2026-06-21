@@ -5,6 +5,7 @@ namespace App\Service\Search;
 use App\Entity\Attachment;
 use App\Entity\Company;
 use App\Entity\Conversation;
+use App\Entity\Document;
 use App\Entity\Task;
 use Doctrine\ORM\EntityManagerInterface;
 use Meilisearch\Client;
@@ -17,6 +18,7 @@ final class SearchIndexer
     public const TASKS = 'tasks';
     public const CONVERSATIONS = 'conversations';
     public const COMPANIES = 'companies';
+    public const DOCUMENTS = 'documents';
 
     private Client $client;
 
@@ -36,7 +38,7 @@ final class SearchIndexer
 
     public function ensureSettings(): void
     {
-        foreach ([self::TASKS, self::CONVERSATIONS, self::COMPANIES] as $i) {
+        foreach ([self::TASKS, self::CONVERSATIONS, self::COMPANIES, self::DOCUMENTS] as $i) {
             try {
                 $this->client->createIndex($i, ['primaryKey' => 'id']);
             } catch (\Throwable) {
@@ -46,8 +48,9 @@ final class SearchIndexer
         $this->client->index(self::CONVERSATIONS)->updateSearchableAttributes(['subject', 'customer', 'body']);
         $this->client->index(self::TASKS)->updateSearchableAttributes(['title', 'summary']);
         $this->client->index(self::COMPANIES)->updateSearchableAttributes(['name', 'subtitle', 'tags', 'fields']);
+        $this->client->index(self::DOCUMENTS)->updateSearchableAttributes(['name', 'companyName', 'body']);
         // Tippfehler schon ab kurzen Wörtern tolerieren (Default: 5/9).
-        foreach ([self::TASKS, self::CONVERSATIONS, self::COMPANIES] as $i) {
+        foreach ([self::TASKS, self::CONVERSATIONS, self::COMPANIES, self::DOCUMENTS] as $i) {
             $this->client->index($i)->updateTypoTolerance(['minWordSizeForTypos' => ['oneTypo' => 4, 'twoTypos' => 8]]);
         }
     }
@@ -58,6 +61,10 @@ final class SearchIndexer
         $this->client->index(self::TASKS)->addDocuments(array_map([$this, 'taskDoc'], $this->em->getRepository(Task::class)->findAll()), 'id');
         $this->client->index(self::CONVERSATIONS)->addDocuments(array_map([$this, 'convDoc'], $this->em->getRepository(Conversation::class)->findAll()), 'id');
         $this->client->index(self::COMPANIES)->addDocuments(array_map([$this, 'companyDoc'], $this->em->getRepository(Company::class)->findAll()), 'id');
+        $docs = array_filter($this->em->getRepository(Document::class)->findAll(), fn (Document $d) => null !== $d->path);
+        if ($docs) {
+            $this->client->index(self::DOCUMENTS)->addDocuments(array_map([$this, 'documentDoc'], array_values($docs)), 'id');
+        }
     }
 
     public function indexTask(Task $t): void
@@ -76,6 +83,14 @@ final class SearchIndexer
     public function indexCompany(Company $c): void
     {
         $this->safe(fn () => $this->client->index(self::COMPANIES)->addDocuments([$this->companyDoc($c)], 'id'));
+    }
+
+    public function indexDocument(Document $d): void
+    {
+        if (null === $d->id) {
+            return;
+        }
+        $this->safe(fn () => $this->client->index(self::DOCUMENTS)->addDocuments([$this->documentDoc($d)], 'id'));
     }
 
     public function removeDoc(string $index, int $id): void
@@ -143,6 +158,26 @@ final class SearchIndexer
             'subtitle' => $c->subtitle,
             'tags' => implode(' ', $c->tags),
             'fields' => trim($fields),
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    public function documentDoc(Document $d): array
+    {
+        $body = (string) $d->extractedText;
+        // Platzhalter-Markierungen ([nicht verfügbar] etc.) nicht in den Suchindex aufnehmen.
+        if ('' !== $body && '[' === ($body[0] ?? '')) {
+            $body = '';
+        }
+
+        return [
+            'id' => $d->id,
+            'name' => $d->name,
+            'type' => $d->type,
+            'companyId' => $d->company?->id,
+            'companyName' => $d->company?->name ?? '',
+            'body' => mb_substr(trim($body), 0, 30000),
+            'date' => $d->date->format('Y-m-d'),
         ];
     }
 

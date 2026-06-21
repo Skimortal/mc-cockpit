@@ -10,22 +10,24 @@ interface Att { id: number; name: string; preview: boolean }
 interface Conv { id: number; subject: string; subjectHl?: string; from: string | null; hasTask: boolean; date: string | null; mailbox: string | null; snippet: string | null; attachment?: Att | null }
 interface TaskHit { id: number; title: string; titleHl?: string; status: string | null; conversationId: number | null; snippet?: string | null }
 interface CompanyHit { id: number; name: string; nameHl?: string; subtitle: string | null; snippet?: string | null }
+interface DocHit { id: number; name: string; nameHl?: string; type: string | null; companyId: number | null; companyName: string | null; snippet?: string | null; preview: boolean }
 
 const route = useRoute()
 const router = useRouter()
 const q = ref(String(route.query.q ?? ''))
 const loading = ref(false)
-const filter = ref<'alle' | 'mails' | 'aufgaben' | 'kunden'>('alle')
-const res = ref<{ tasks: TaskHit[]; conversations: Conv[]; companies: CompanyHit[] }>({ tasks: [], conversations: [], companies: [] })
+const filter = ref<'alle' | 'mails' | 'aufgaben' | 'kunden' | 'dokumente'>('alle')
+const empty = { tasks: [], conversations: [], companies: [], documents: [] }
+const res = ref<{ tasks: TaskHit[]; conversations: Conv[]; companies: CompanyHit[]; documents: DocHit[] }>({ ...empty })
 let timer: ReturnType<typeof setTimeout> | null = null
 
 function total() {
-  return res.value.tasks.length + res.value.conversations.length + res.value.companies.length
+  return res.value.tasks.length + res.value.conversations.length + res.value.companies.length + res.value.documents.length
 }
 async function run() {
   const term = q.value.trim()
   if (term.length < 2) {
-    res.value = { tasks: [], conversations: [], companies: [] }
+    res.value = { ...empty }
     return
   }
   loading.value = true
@@ -55,6 +57,21 @@ function openConv(c: Conv) {
   const query = c.attachment?.preview ? { conv: c.id, att: c.attachment.id } : { conv: c.id }
   router.push({ path: '/aufgaben', query })
 }
+async function openDoc(d: DocHit) {
+  const path = d.preview ? 'preview' : 'download'
+  const r = await api.get(`/api/documents/${d.id}/${path}`, { responseType: 'blob' })
+  const url = URL.createObjectURL(r.data as Blob)
+  if (d.preview) {
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  } else {
+    const link = document.createElement('a')
+    link.href = url
+    link.download = d.name
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+}
 
 watch(() => route.query.q, (v) => {
   const s = String(v ?? '')
@@ -79,10 +96,10 @@ onMounted(run)
 
         <!-- Filter-Tabs -->
         <div v-if="total() > 0" class="flex items-center gap-1 mt-3 text-[12px]">
-          <button v-for="f in (['alle', 'mails', 'aufgaben', 'kunden'] as const)" :key="f" @click="filter = f"
+          <button v-for="f in (['alle', 'mails', 'aufgaben', 'kunden', 'dokumente'] as const)" :key="f" @click="filter = f"
             class="px-2.5 py-1 rounded-lg" :class="filter === f ? 'bg-navy text-white' : 'text-neutral-500 hover:bg-beige'">
-            {{ f === 'alle' ? 'Alle' : f === 'mails' ? 'Mails' : f === 'aufgaben' ? 'Aufgaben' : 'Kunden' }}
-            <span class="ml-1 text-[10px] opacity-70">{{ f === 'alle' ? total() : f === 'mails' ? res.conversations.length : f === 'aufgaben' ? res.tasks.length : res.companies.length }}</span>
+            {{ f === 'alle' ? 'Alle' : f === 'mails' ? 'Mails' : f === 'aufgaben' ? 'Aufgaben' : f === 'kunden' ? 'Kunden' : 'Dokumente' }}
+            <span class="ml-1 text-[10px] opacity-70">{{ f === 'alle' ? total() : f === 'mails' ? res.conversations.length : f === 'aufgaben' ? res.tasks.length : f === 'kunden' ? res.companies.length : res.documents.length }}</span>
           </button>
         </div>
 
@@ -147,6 +164,28 @@ onMounted(run)
                 <span v-if="co.subtitle" class="text-[11.5px] text-neutral-400 truncate">· {{ co.subtitle }}</span>
               </div>
               <div v-if="co.snippet" class="text-[12px] text-neutral-500 mt-0.5 leading-snug line-clamp-1 pl-6" v-html="hlHtml(co.snippet)"></div>
+            </button>
+          </div>
+        </section>
+
+        <!-- DOKUMENTE -->
+        <section v-if="res.documents.length && (filter === 'alle' || filter === 'dokumente')" class="mt-6">
+          <h2 class="flex items-center gap-2 text-[12px] uppercase tracking-wider text-neutral-400 mb-2 px-1">
+            <Icon name="paperclip" class="w-4 h-4" /> Dokumente <span class="text-coral">{{ res.documents.length }}</span>
+          </h2>
+          <div class="bg-white border border-[#e6dad6] rounded-xl divide-y divide-[#f0e7e3] overflow-hidden">
+            <button v-for="d in res.documents" :key="d.id" @click="openDoc(d)"
+              class="w-full text-left px-4 py-2.5 hover:bg-beige-soft block">
+              <div class="flex items-center gap-2">
+                <span class="w-6 h-6 rounded bg-coral/10 text-coral text-[9px] flex items-center justify-center font-semibold uppercase shrink-0">{{ d.type }}</span>
+                <span class="text-[13.5px] text-ebony truncate" v-html="hlHtml(d.nameHl || d.name)"></span>
+                <span class="text-[11px] text-coral ml-auto shrink-0">{{ d.preview ? 'öffnet direkt' : 'lädt herunter' }}</span>
+              </div>
+              <div class="text-[11.5px] text-neutral-500 mt-0.5 pl-8 flex items-center gap-1.5">
+                <Icon name="building" class="w-3.5 h-3.5 text-neutral-300" />
+                <span class="truncate">{{ d.companyName }}</span>
+              </div>
+              <div v-if="d.snippet" class="text-[12px] text-neutral-500 mt-1 leading-snug line-clamp-2 pl-8" v-html="hlHtml(d.snippet)"></div>
             </button>
           </div>
         </section>

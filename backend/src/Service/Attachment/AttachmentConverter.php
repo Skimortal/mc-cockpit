@@ -25,32 +25,48 @@ final class AttachmentConverter
 
     public function isImage(Attachment $a): bool
     {
-        return str_starts_with((string) $a->contentType, 'image/');
+        return $this->isImageType((string) $a->contentType);
+    }
+
+    public function isImageType(string $contentType): bool
+    {
+        return str_starts_with($contentType, 'image/');
     }
 
     /** Konvertierbar zu PDF-Vorschau? (PDF direkt, Office via Gotenberg) */
     public function canPreviewAsPdf(Attachment $a): bool
     {
-        $t = (string) $a->contentType;
+        return $this->canPreviewAsPdfType((string) $a->contentType, $a->filename);
+    }
 
-        return str_contains($t, 'pdf')
-            || str_contains($t, 'word') || str_contains($t, 'opendocument')
-            || str_contains($t, 'excel') || str_contains($t, 'spreadsheet')
-            || str_contains($t, 'powerpoint') || str_contains($t, 'presentation')
-            || (bool) preg_match('/\.(docx?|xlsx?|pptx?|odt|ods|odp|rtf)$/i', $a->filename);
+    public function canPreviewAsPdfType(string $contentType, string $filename): bool
+    {
+        return str_contains($contentType, 'pdf')
+            || str_contains($contentType, 'word') || str_contains($contentType, 'opendocument')
+            || str_contains($contentType, 'excel') || str_contains($contentType, 'spreadsheet')
+            || str_contains($contentType, 'powerpoint') || str_contains($contentType, 'presentation')
+            || (bool) preg_match('/\.(docx?|xlsx?|pptx?|odt|ods|odp|rtf)$/i', $filename);
     }
 
     /** Liefert den Pfad zu einer PDF-Fassung (Original bei PDF, sonst konvertiert + gecacht) oder null. */
     public function pdfPath(Attachment $a): ?string
     {
-        $src = $this->srcPath($a);
+        return $this->pdfPathFor($this->srcPath($a), $a->filename, (string) $a->contentType);
+    }
+
+    /**
+     * Generische PDF-Vorschau für eine beliebige Datei (Anhang oder Firmen-Dokument).
+     * Original bei PDF, sonst per Gotenberg konvertiert und neben der Datei gecacht.
+     */
+    public function pdfPathFor(string $src, string $filename, string $contentType): ?string
+    {
         if (!is_file($src)) {
             return null;
         }
-        if (str_contains((string) $a->contentType, 'pdf') || preg_match('/\.pdf$/i', $a->filename)) {
+        if (str_contains($contentType, 'pdf') || preg_match('/\.pdf$/i', $filename)) {
             return $src;
         }
-        if ('' === $this->gotenbergUrl || !$this->canPreviewAsPdf($a)) {
+        if ('' === $this->gotenbergUrl || !$this->canPreviewAsPdfType($contentType, $filename)) {
             return null;
         }
 
@@ -60,7 +76,7 @@ final class AttachmentConverter
         }
 
         try {
-            $form = new FormDataPart(['files' => DataPart::fromPath($src, $a->filename)]);
+            $form = new FormDataPart(['files' => DataPart::fromPath($src, $filename)]);
             $resp = $this->http->request('POST', rtrim($this->gotenbergUrl, '/').'/forms/libreoffice/convert', [
                 'headers' => $form->getPreparedHeaders()->toArray(),
                 'body' => $form->bodyToIterable(),

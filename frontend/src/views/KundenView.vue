@@ -13,7 +13,7 @@ const router = useRouter()
 
 interface Field { label: string; value: string }
 interface Contact { id: number; department: string; name: string; email: string | null; phone: string | null }
-interface Doc { id: number; name: string; type: string; date: string }
+interface Doc { id: number; name: string; type: string; date: string; size: number; hasFile: boolean; preview: boolean }
 interface CompanyListItem { id: number; name: string; subtitle: string | null; kind: string; tags: string[]; contactCount: number; docCount: number }
 interface RelTask { id: number; title: string; status: string; conversationId: number | null; dueDate: string | null; overdue: boolean; assignee: string | null }
 interface RelConv { id: number; subject: string; from: string | null; date: string | null }
@@ -85,13 +85,49 @@ async function addContact() {
   await select(selId.value)
   await loadList()
 }
-async function addDoc() {
-  if (!selId.value) return
-  const r = await promptDialog([{ key: 'name', label: 'Dokumentname' }], { title: 'Dokument hinzufügen' })
-  if (!r || !r.name) return
-  await api.post(`/api/companies/${selId.value}/documents`, { name: r.name, type: 'PDF' })
-  await select(selId.value)
-  await loadList()
+const fileInput = ref<HTMLInputElement | null>(null)
+const uploading = ref(false)
+function triggerUpload() {
+  if (fileInput.value) fileInput.value.value = ''
+  fileInput.value?.click()
+}
+async function onFilePicked(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file || !selId.value) return
+  uploading.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('name', file.name)
+    await api.post(`/api/companies/${selId.value}/documents`, fd)
+    await select(selId.value)
+    await loadList()
+  } finally {
+    uploading.value = false
+  }
+}
+function fmtSize(n: number): string {
+  if (!n) return ''
+  if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB'
+  if (n >= 1024) return Math.round(n / 1024) + ' KB'
+  return n + ' B'
+}
+async function openDoc(d: Doc) {
+  if (!d.hasFile) return
+  const path = d.preview ? 'preview' : 'download'
+  const res = await api.get(`/api/documents/${d.id}/${path}`, { responseType: 'blob' })
+  const url = URL.createObjectURL(res.data as Blob)
+  if (d.preview) {
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  } else {
+    const link = document.createElement('a')
+    link.href = url
+    link.download = d.name
+    link.click()
+    URL.revokeObjectURL(url)
+  }
 }
 async function addCompany() {
   const r = await promptDialog([{ key: 'name', label: 'Firmenname (Hersteller)' }], { title: 'Kunde anlegen' })
@@ -237,16 +273,19 @@ onMounted(async () => {
           <!-- Dokumente -->
           <div class="mt-6 flex items-center justify-between">
             <h3 class="text-[12px] uppercase tracking-wider text-neutral-400">Dokumente</h3>
-            <button @click="addDoc" class="text-[11px] text-coral font-medium">+ Dokument</button>
+            <button @click="triggerUpload" :disabled="uploading" class="text-[11px] text-coral font-medium disabled:opacity-50">{{ uploading ? 'Lädt hoch…' : '+ Datei hochladen' }}</button>
+            <input ref="fileInput" type="file" class="hidden" @change="onFilePicked" />
           </div>
           <div class="mt-2 space-y-1.5">
-            <div v-for="d in detail.documents" :key="d.id" class="flex items-center gap-2 bg-white border border-[#e6dad6] rounded-lg px-3 py-2">
-              <span class="w-7 h-7 rounded bg-coral/10 text-coral text-[10px] flex items-center justify-center font-semibold">{{ d.type }}</span>
-              <span class="text-[13px] text-ebony">{{ d.name }}</span>
+            <div v-for="d in detail.documents" :key="d.id" class="flex items-center gap-2 bg-white border border-[#e6dad6] rounded-lg px-3 py-2 hover:border-coral group">
+              <span class="w-7 h-7 rounded bg-coral/10 text-coral text-[10px] flex items-center justify-center font-semibold uppercase">{{ d.type }}</span>
+              <button @click="openDoc(d)" :disabled="!d.hasFile" class="text-[13px] text-ebony text-left hover:text-coral truncate disabled:cursor-default" :title="d.preview ? 'Vorschau öffnen' : 'Herunterladen'">{{ d.name }}</button>
+              <span v-if="d.size" class="text-[11px] text-neutral-300">{{ fmtSize(d.size) }}</span>
               <span class="ml-auto text-[11px] text-neutral-400">{{ d.date }}</span>
+              <button v-if="d.hasFile" @click="openDoc(d)" :title="d.preview ? 'Vorschau' : 'Herunterladen'" class="w-7 h-7 grid place-items-center rounded text-neutral-400 hover:bg-beige hover:text-navy"><Icon :name="d.preview ? 'eye' : 'download'" class="w-3.5 h-3.5" /></button>
               <button @click="delDoc(d)" title="Löschen" class="w-7 h-7 grid place-items-center rounded text-neutral-400 hover:bg-red-50 hover:text-red-600"><Icon name="trash" class="w-3.5 h-3.5" /></button>
             </div>
-            <div v-if="!detail.documents.length" class="text-[12px] text-neutral-400">Noch keine Dokumente — „+ Dokument".</div>
+            <div v-if="!detail.documents.length" class="text-[12px] text-neutral-400">Noch keine Dokumente — „+ Datei hochladen".</div>
           </div>
 
           <!-- Verknüpfte Aufgaben -->

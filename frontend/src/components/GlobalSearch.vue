@@ -10,13 +10,15 @@ const q = ref('')
 const open = ref(false)
 const active = ref(-1)
 const inputEl = ref<HTMLInputElement | null>(null)
-const res = ref<{ tasks: any[]; conversations: any[]; companies: any[] }>({ tasks: [], conversations: [], companies: [] })
+const emptyRes = { tasks: [], conversations: [], companies: [], documents: [] }
+const res = ref<{ tasks: any[]; conversations: any[]; companies: any[]; documents: any[] }>({ ...emptyRes })
 let timer: ReturnType<typeof setTimeout> | null = null
 
 const flat = computed(() => [
   ...res.value.tasks.map((t) => ({ kind: 'task', item: t })),
   ...res.value.conversations.map((c) => ({ kind: 'conv', item: c })),
   ...res.value.companies.map((co) => ({ kind: 'company', item: co })),
+  ...res.value.documents.map((d) => ({ kind: 'document', item: d })),
 ])
 function hasResults() {
   return flat.value.length > 0
@@ -32,7 +34,7 @@ function onInput() {
 }
 async function run() {
   if (q.value.trim().length < 2) {
-    res.value = { tasks: [], conversations: [], companies: [] }
+    res.value = { ...emptyRes }
     active.value = -1
     return
   }
@@ -57,8 +59,27 @@ function openItem(f: { kind: string; item: any }) {
   } else if (f.kind === 'conv') {
     const c = f.item
     go('/aufgaben', c.attachment?.preview ? { conv: c.id, att: c.attachment.id } : { conv: c.id })
+  } else if (f.kind === 'document') {
+    openDoc(f.item)
   } else {
     go('/kunden', { company: f.item.id })
+  }
+}
+async function openDoc(d: any) {
+  open.value = false
+  q.value = ''
+  const path = d.preview ? 'preview' : 'download'
+  const r = await api.get(`/api/documents/${d.id}/${path}`, { responseType: 'blob' })
+  const url = URL.createObjectURL(r.data as Blob)
+  if (d.preview) {
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  } else {
+    const link = document.createElement('a')
+    link.href = url
+    link.download = d.name
+    link.click()
+    URL.revokeObjectURL(url)
   }
 }
 function move(d: number) {
@@ -134,6 +155,15 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKey))
           <button v-for="co in res.companies" :key="'co' + co.id" @mousedown.prevent="openItem({ kind: 'company', item: co })"
             class="w-full text-left px-3 py-1.5 flex items-center gap-2" :class="isActive('company', co.id) ? 'bg-beige' : 'hover:bg-beige-soft'">
             <Icon name="building" class="w-4 h-4 text-navy shrink-0" /><span class="text-[13px] truncate" v-html="hlHtml(co.nameHl || co.name)"></span>
+          </button>
+        </div>
+        <div v-if="res.documents.length" class="py-1 border-t border-[#f0e7e3]">
+          <div class="px-3 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-neutral-400">Dokumente</div>
+          <button v-for="d in res.documents" :key="'d' + d.id" @mousedown.prevent="openItem({ kind: 'document', item: d })"
+            class="w-full text-left px-3 py-1.5 flex items-center gap-2" :class="isActive('document', d.id) ? 'bg-beige' : 'hover:bg-beige-soft'">
+            <Icon name="paperclip" class="w-4 h-4 text-navy shrink-0" />
+            <span class="text-[13px] truncate" v-html="hlHtml(d.nameHl || d.name)"></span>
+            <span v-if="d.companyName" class="text-[11px] text-neutral-400 ml-auto shrink-0 truncate max-w-[35%]">{{ d.companyName }}</span>
           </button>
         </div>
       </template>
