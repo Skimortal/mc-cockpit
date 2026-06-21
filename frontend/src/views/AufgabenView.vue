@@ -236,19 +236,29 @@ async function convertToTask() {
 // --- Datei-Anhänge an der Aufgabe ---
 const taskFileInput = ref<HTMLInputElement | null>(null)
 const taskUploading = ref(false)
+const taskDragOver = ref(false)
 function triggerTaskUpload() {
   if (taskFileInput.value) taskFileInput.value.value = ''
   taskFileInput.value?.click()
 }
-async function onTaskFilePicked(e: Event) {
+function onTaskFilePicked(e: Event) {
   const files = (e.target as HTMLInputElement).files
-  if (!files?.length || !selTask.value) return
+  if (files?.length) uploadTaskFiles(Array.from(files))
+}
+function onTaskDrop(e: DragEvent) {
+  taskDragOver.value = false
+  const files = e.dataTransfer?.files
+  if (files?.length) uploadTaskFiles(Array.from(files))
+}
+async function uploadTaskFiles(files: File[]) {
+  if (!selTask.value) return
+  const tid = selTask.value.id
   taskUploading.value = true
   try {
-    for (const f of Array.from(files)) {
+    for (const f of files) {
       const fd = new FormData()
       fd.append('file', f)
-      await api.post(`/api/tasks/${selTask.value.id}/files`, fd)
+      await api.post(`/api/tasks/${tid}/files`, fd)
     }
     await loadBoard()
   } finally { taskUploading.value = false }
@@ -492,7 +502,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
                   <option value="">— Unzugewiesen —</option>
                   <option v-for="p in team" :key="p.id" :value="p.id">{{ p.name }}</option>
                 </select>
-                <button v-if="selTask.assignee" @click="notifyAssignee(selTask)" :disabled="notifying" title="Zuständigen per E-Mail benachrichtigen" class="ml-auto text-[11px] px-2 py-1 rounded-lg bg-navy/10 text-navy hover:bg-navy/20 disabled:opacity-50 whitespace-nowrap">{{ notifying ? '…' : '📧 Benachrichtigen' }}</button>
+                <button v-if="selTask.assignee" @click="notifyAssignee(selTask)" :disabled="notifying" title="E-Mail an den Zuständigen – inkl. Kommentare, Datei-Hinweis und Link zur Aufgabe" class="ml-auto text-[11px] px-2 py-1 rounded-lg bg-navy/10 text-navy hover:bg-navy/20 disabled:opacity-50 whitespace-nowrap">{{ notifying ? '…' : '📧 Benachrichtigen' }}</button>
               </div>
               <div v-if="notifyMsg" class="mt-1 text-[11px]" :class="notifyMsg.startsWith('⚠️') ? 'text-red-600' : 'text-green-700'">{{ notifyMsg }}</div>
               <div class="mt-2 flex items-center gap-2 text-[11px]">
@@ -538,12 +548,10 @@ onBeforeUnmount(() => clearInterval(pollTimer))
                 </div>
               </div>
               <!-- Datei-Anhänge an der Aufgabe -->
-              <div class="mt-3">
-                <div class="flex items-center justify-between mb-1">
-                  <div class="text-[10px] uppercase tracking-wide text-neutral-400">Dateien</div>
-                  <button @click="triggerTaskUpload" :disabled="taskUploading" class="text-[11px] text-coral font-medium disabled:opacity-50">{{ taskUploading ? 'Lädt hoch…' : '+ Datei (z. B. ZIP)' }}</button>
-                  <input ref="taskFileInput" type="file" multiple class="hidden" @change="onTaskFilePicked" />
-                </div>
+              <div class="mt-3"
+                @dragover.prevent="taskDragOver = true" @dragenter.prevent="taskDragOver = true"
+                @dragleave.prevent="taskDragOver = false" @drop.prevent="onTaskDrop">
+                <div class="text-[10px] uppercase tracking-wide text-neutral-400 mb-1">Dateien</div>
                 <div v-for="f in selTask.files" :key="f.id" class="flex items-center gap-2 bg-white border border-[#e6dad6] rounded-lg px-2 py-1.5 mb-1">
                   <span class="w-7 h-7 rounded bg-navy/10 text-navy text-[9px] grid place-items-center font-semibold uppercase shrink-0">{{ f.ext }}</span>
                   <button @click="downloadTaskFile(f)" class="text-[12px] text-ebony text-left hover:text-coral truncate min-w-0 flex-1" :title="f.preview ? 'Öffnen' : 'Herunterladen'">{{ f.name }}</button>
@@ -551,7 +559,14 @@ onBeforeUnmount(() => clearInterval(pollTimer))
                   <button @click="downloadTaskFile(f)" :title="f.preview ? 'Öffnen' : 'Herunterladen'" class="w-6 h-6 grid place-items-center rounded text-neutral-400 hover:bg-beige hover:text-navy shrink-0"><Icon :name="f.preview ? 'eye' : 'download'" class="w-3.5 h-3.5" /></button>
                   <button @click="delTaskFile(f)" title="Löschen" class="w-6 h-6 grid place-items-center rounded text-neutral-400 hover:bg-red-50 hover:text-red-600 shrink-0"><Icon name="trash" class="w-3.5 h-3.5" /></button>
                 </div>
-                <div v-if="!selTask.files.length" class="text-[11px] text-neutral-400">Keine Dateien — „+ Datei" (ZIP/PDF/…), dann z. B. Ljubisa zuweisen.</div>
+                <button type="button" @click="triggerTaskUpload" :disabled="taskUploading"
+                  class="w-full mt-1 rounded-xl border-2 border-dashed px-3 py-3 flex flex-col items-center gap-1 transition-colors cursor-pointer disabled:opacity-60"
+                  :class="taskDragOver ? 'border-coral bg-coral/10 text-coral' : 'border-[#d8c7c1] text-neutral-500 hover:border-coral hover:text-coral hover:bg-coral/5'">
+                  <Icon name="upload" class="w-5 h-5" :class="taskDragOver ? 'text-coral' : 'text-neutral-400'" />
+                  <span class="text-[12px] font-medium">{{ taskUploading ? 'Lädt hoch…' : (taskDragOver ? 'Loslassen zum Hochladen' : 'Dateien hierher ziehen') }}</span>
+                  <span v-if="!taskUploading && !taskDragOver" class="text-[10px] text-neutral-400">oder klicken (ZIP/PDF/… bis 50 MB)</span>
+                </button>
+                <input ref="taskFileInput" type="file" multiple class="hidden" @change="onTaskFilePicked" />
               </div>
             </div>
             <div v-else>

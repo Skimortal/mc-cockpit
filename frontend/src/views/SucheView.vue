@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../api'
 import AppTopbar from '../components/AppTopbar.vue'
@@ -94,6 +94,16 @@ function show(key: SectionKey): boolean {
 function limited<T>(key: SectionKey, list: T[]): T[] {
   return expanded.value === key ? list : list.slice(0, PREVIEW)
 }
+// Mails nach Postfach gruppieren (Untertitel nur, wenn mehrere Postfächer betroffen sind)
+const mailGroups = computed(() => {
+  const m = new Map<string, Conv[]>()
+  for (const c of limited('mails', res.value.conversations)) {
+    const k = c.mailbox || '—'
+    if (!m.has(k)) m.set(k, [])
+    m.get(k)!.push(c)
+  }
+  return Array.from(m, ([mailbox, items]) => ({ mailbox, items }))
+})
 
 watch(() => route.query.q, (v) => {
   const s = String(v ?? '')
@@ -136,21 +146,26 @@ onMounted(run)
               <button v-if="expanded !== 'mails' && res.counts.conversations > PREVIEW" @click="expanded = 'mails'" class="text-[12px] text-coral font-medium">Alle {{ res.counts.conversations }} →</button>
             </div>
             <div class="bg-white border border-[#e6dad6] rounded-xl divide-y divide-[#f0e7e3] overflow-hidden">
-              <button v-for="c in limited('mails', res.conversations)" :key="c.id" @click="openConv(c)"
-                class="w-full text-left px-4 py-2.5 hover:bg-beige-soft block">
-                <div class="flex items-center gap-2">
-                  <span v-if="c.subject" class="text-[13.5px] font-semibold text-navy truncate" v-html="hlHtml(c.subjectHl || c.subject)"></span>
-                  <span v-else class="text-[13.5px] font-semibold text-neutral-400 truncate">(ohne Betreff)</span>
-                  <span v-if="c.hasTask" class="text-[10px] px-1.5 py-0.5 rounded bg-coral/15 text-coral shrink-0">Aufgabe</span>
-                  <span class="text-[11px] text-neutral-400 ml-auto shrink-0">{{ fmtDate(c.date) }}</span>
+              <template v-for="g in mailGroups" :key="g.mailbox">
+                <div v-if="mailGroups.length > 1" class="px-4 py-1.5 bg-beige-soft text-[10px] uppercase tracking-wide text-navy/70 flex items-center gap-1.5">
+                  <Icon name="envelope" class="w-3.5 h-3.5" /> {{ g.mailbox }} <span class="text-coral">{{ g.items.length }}</span>
                 </div>
-                <div class="text-[11.5px] text-neutral-500 mt-0.5 flex items-center gap-1.5">
-                  <span class="truncate">{{ c.from }}</span>
-                  <span v-if="c.mailbox" class="text-neutral-300">·</span>
-                  <span v-if="c.mailbox" class="text-neutral-400 truncate">{{ c.mailbox }}</span>
-                </div>
-                <div v-if="c.snippet" class="text-[12px] text-neutral-500 mt-1 leading-snug line-clamp-2" v-html="hlHtml(c.snippet)"></div>
-              </button>
+                <button v-for="c in g.items" :key="c.id" @click="openConv(c)"
+                  class="w-full text-left px-4 py-2.5 hover:bg-beige-soft block">
+                  <div class="flex items-center gap-2">
+                    <span v-if="c.subject" class="text-[13.5px] font-semibold text-navy truncate" v-html="hlHtml(c.subjectHl || c.subject)"></span>
+                    <span v-else class="text-[13.5px] font-semibold text-neutral-400 truncate">(ohne Betreff)</span>
+                    <span v-if="c.hasTask" class="text-[10px] px-1.5 py-0.5 rounded bg-coral/15 text-coral shrink-0">Aufgabe</span>
+                    <span class="text-[11px] text-neutral-400 ml-auto shrink-0">{{ fmtDate(c.date) }}</span>
+                  </div>
+                  <div class="text-[11.5px] text-neutral-500 mt-0.5 flex items-center gap-1.5">
+                    <span class="truncate">{{ c.from }}</span>
+                    <span v-if="c.mailbox && mailGroups.length <= 1" class="text-neutral-300">·</span>
+                    <span v-if="c.mailbox && mailGroups.length <= 1" class="text-neutral-400 truncate">{{ c.mailbox }}</span>
+                  </div>
+                  <div v-if="c.snippet" class="text-[12px] text-neutral-500 mt-1 leading-snug line-clamp-2" v-html="hlHtml(c.snippet)"></div>
+                </button>
+              </template>
             </div>
           </section>
 

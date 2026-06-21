@@ -105,6 +105,15 @@ final class Mailer
             $lines[] = '';
             $lines[] = $task->aiSummary;
         }
+        // Interne Kommentare/Anweisungen mitschicken, damit der Kollege den Kontext direkt hat.
+        $comments = $task->comments->toArray();
+        if ($comments) {
+            $lines[] = '';
+            $lines[] = '--- Kommentare ---';
+            foreach ($comments as $k) {
+                $lines[] = sprintf('• %s: %s', $k->authorName, trim((string) $k->body));
+            }
+        }
         if ($fileCount > 0) {
             $lines[] = '';
             $lines[] = sprintf('📎 An der Aufgabe %s %d Datei(en) zum Download.', 1 === $fileCount ? 'hängt' : 'hängen', $fileCount);
