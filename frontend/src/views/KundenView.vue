@@ -86,26 +86,46 @@ async function addContact() {
   await loadList()
 }
 const fileInput = ref<HTMLInputElement | null>(null)
-const uploading = ref(false)
+const dragOver = ref(false)
+interface UpItem { name: string; pct: number; error?: boolean }
+const uploads = ref<UpItem[]>([])
+const uploading = computed(() => uploads.value.some((u) => u.pct < 100 && !u.error))
+
 function triggerUpload() {
   if (fileInput.value) fileInput.value.value = ''
   fileInput.value?.click()
 }
-async function onFilePicked(e: Event) {
+function onFilePicked(e: Event) {
   const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file || !selId.value) return
-  uploading.value = true
-  try {
+  if (input.files?.length) uploadFiles(Array.from(input.files))
+}
+function onDrop(e: DragEvent) {
+  dragOver.value = false
+  const files = e.dataTransfer?.files
+  if (files?.length) uploadFiles(Array.from(files))
+}
+async function uploadFiles(files: File[]) {
+  if (!selId.value) return
+  const cid = selId.value
+  const items: UpItem[] = files.map((f) => ({ name: f.name, pct: 0 }))
+  uploads.value = items
+  for (let i = 0; i < files.length; i++) {
     const fd = new FormData()
-    fd.append('file', file)
-    fd.append('name', file.name)
-    await api.post(`/api/companies/${selId.value}/documents`, fd)
-    await select(selId.value)
-    await loadList()
-  } finally {
-    uploading.value = false
+    fd.append('file', files[i])
+    fd.append('name', files[i].name)
+    try {
+      await api.post(`/api/companies/${cid}/documents`, fd, {
+        onUploadProgress: (ev) => { items[i].pct = ev.total ? Math.round((ev.loaded / ev.total) * 100) : 0 },
+      })
+      items[i].pct = 100
+    } catch {
+      items[i].error = true
+    }
   }
+  await select(cid)
+  await loadList()
+  // Erfolgreiche Liste nach kurzem Moment ausblenden; Fehler bleiben sichtbar.
+  setTimeout(() => { if (!uploads.value.some((u) => u.error)) uploads.value = [] }, 1800)
 }
 function fmtSize(n: number): string {
   if (!n) return ''
@@ -273,10 +293,12 @@ onMounted(async () => {
           <!-- Dokumente -->
           <div class="mt-6 flex items-center justify-between">
             <h3 class="text-[12px] uppercase tracking-wider text-neutral-400">Dokumente</h3>
-            <button @click="triggerUpload" :disabled="uploading" class="text-[11px] text-coral font-medium disabled:opacity-50">{{ uploading ? 'Lädt hoch…' : '+ Datei hochladen' }}</button>
-            <input ref="fileInput" type="file" class="hidden" @change="onFilePicked" />
+            <button @click="triggerUpload" :disabled="uploading" class="text-[11px] text-coral font-medium disabled:opacity-50">{{ uploading ? 'Lädt hoch…' : '+ Dateien hochladen' }}</button>
+            <input ref="fileInput" type="file" multiple class="hidden" @change="onFilePicked" />
           </div>
-          <div class="mt-2 space-y-1.5">
+          <div class="mt-2 space-y-1.5"
+            @dragover.prevent="dragOver = true" @dragenter.prevent="dragOver = true"
+            @dragleave.prevent="dragOver = false" @drop.prevent="onDrop">
             <div v-for="d in detail.documents" :key="d.id" class="flex items-center gap-2 bg-white border border-[#e6dad6] rounded-lg px-3 py-2 hover:border-coral group">
               <span class="w-7 h-7 rounded bg-coral/10 text-coral text-[10px] flex items-center justify-center font-semibold uppercase">{{ d.type }}</span>
               <button @click="openDoc(d)" :disabled="!d.hasFile" class="text-[13px] text-ebony text-left hover:text-coral truncate disabled:cursor-default" :title="d.preview ? 'Vorschau öffnen' : 'Herunterladen'">{{ d.name }}</button>
@@ -285,7 +307,26 @@ onMounted(async () => {
               <button v-if="d.hasFile" @click="openDoc(d)" :title="d.preview ? 'Vorschau' : 'Herunterladen'" class="w-7 h-7 grid place-items-center rounded text-neutral-400 hover:bg-beige hover:text-navy"><Icon :name="d.preview ? 'eye' : 'download'" class="w-3.5 h-3.5" /></button>
               <button @click="delDoc(d)" title="Löschen" class="w-7 h-7 grid place-items-center rounded text-neutral-400 hover:bg-red-50 hover:text-red-600"><Icon name="trash" class="w-3.5 h-3.5" /></button>
             </div>
-            <div v-if="!detail.documents.length" class="text-[12px] text-neutral-400">Noch keine Dokumente — „+ Datei hochladen".</div>
+
+            <!-- Upload-Fortschritt -->
+            <div v-for="(u, i) in uploads" :key="'up' + i" class="flex items-center gap-2 bg-white border rounded-lg px-3 py-2"
+              :class="u.error ? 'border-red-300' : 'border-[#e6dad6]'">
+              <Icon name="paperclip" class="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+              <span class="text-[13px] text-ebony truncate flex-1">{{ u.name }}</span>
+              <span v-if="u.error" class="text-[11px] text-red-600 shrink-0">Fehler</span>
+              <template v-else>
+                <div class="w-24 h-1.5 rounded-full bg-beige overflow-hidden shrink-0">
+                  <div class="h-full bg-coral transition-all" :style="{ width: u.pct + '%' }"></div>
+                </div>
+                <span class="text-[11px] text-neutral-400 w-9 text-right shrink-0">{{ u.pct }}%</span>
+              </template>
+            </div>
+
+            <!-- Drop-Zone / Leerzustand -->
+            <div class="rounded-lg border-2 border-dashed px-3 py-3 text-center text-[12px] transition-colors"
+              :class="dragOver ? 'border-coral bg-coral/5 text-coral' : 'border-[#e0d2cd] text-neutral-400'">
+              {{ dragOver ? 'Dateien hier ablegen …' : 'Dateien hierher ziehen oder „+ Dateien hochladen"' }}
+            </div>
           </div>
 
           <!-- Verknüpfte Aufgaben -->
