@@ -54,4 +54,12 @@ class Mailbox
 
     #[ORM\Column]
     public bool $active = true;
+
+    /** Anhang-Dateien nach so vielen Monaten von der Platte entfernen (Text bleibt durchsuchbar). 0 = nie. */
+    #[ORM\Column(options: ['default' => 12])]
+    public int $attachmentRetentionMonths = 12;
+
+    /** Ganze Mail nach so vielen Monaten löschen (Original bleibt im mbox-Archiv). 0 = nie. */
+    #[ORM\Column(options: ['default' => 0])]
+    public int $mailRetentionMonths = 0;
 }

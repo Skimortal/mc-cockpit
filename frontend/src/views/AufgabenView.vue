@@ -19,7 +19,7 @@ interface Task {
   aiSummary: string | null; suggestedAssignee: string | null; assignee: Person | null
   conversationId: number | null; companyId: number | null; companyName: string | null; tags: string[]; comments: Comment[]
 }
-interface Att { id: number; name: string; size: number; type: string | null }
+interface Att { id: number; name: string; size: number; type: string | null; pruned?: boolean }
 interface Msg { dir: string; who: string; to: string; time: string; body: string; attachments?: Att[] }
 interface ConvDetail { id: number; subject: string; customerName: string; customerEmail: string; taskId: number | null; messages: Msg[] }
 
@@ -484,16 +484,27 @@ onBeforeUnmount(() => clearInterval(pollTimer))
               </div>
               <div v-if="openMsgs.has(x.i)" class="px-3 py-2.5 text-[12.5px] text-neutral-700 leading-relaxed whitespace-pre-wrap border-t" :class="x.m.dir === 'out' ? 'border-coral/20' : 'border-[#efe4df]'">{{ x.m.body }}</div>
               <div v-if="openMsgs.has(x.i) && x.m.attachments && x.m.attachments.length" class="px-3 pb-2.5 pt-2 flex flex-wrap gap-1.5 border-t" :class="x.m.dir === 'out' ? 'border-coral/20' : 'border-[#efe4df]'">
-                <div v-for="a in x.m.attachments" :key="a.id" class="flex items-center rounded border border-[#e0d2cd] bg-white overflow-hidden max-w-[240px]">
-                  <button @click="openPreview(a)" :title="canPreview(a) ? `${a.name} – Vorschau` : `${a.name} – herunterladen`"
-                    class="flex items-center gap-1.5 text-[11px] px-2 py-1 hover:text-coral min-w-0">
-                    <Icon name="paperclip" class="w-3.5 h-3.5 shrink-0" />
-                    <span class="truncate">{{ a.name }}</span>
-                    <span class="text-neutral-400 shrink-0">{{ fmtSize(a.size) }}</span>
-                  </button>
-                  <button @click="downloadAttachment(a)" title="Herunterladen" class="px-1.5 py-1 border-l border-[#efe4df] text-neutral-400 hover:text-coral shrink-0">
-                    <Icon name="download" class="w-3.5 h-3.5" />
-                  </button>
+                <div v-for="a in x.m.attachments" :key="a.id" class="flex items-center rounded border bg-white overflow-hidden max-w-[240px]"
+                  :class="a.pruned ? 'border-[#e6dad6] opacity-70' : 'border-[#e0d2cd]'">
+                  <template v-if="a.pruned">
+                    <span :title="`${a.name} – nach Aufbewahrungsfrist entfernt, Original im Mail-Archiv`"
+                      class="flex items-center gap-1.5 text-[11px] px-2 py-1 text-neutral-400 min-w-0">
+                      <Icon name="paperclip" class="w-3.5 h-3.5 shrink-0" />
+                      <span class="truncate line-through">{{ a.name }}</span>
+                      <span class="shrink-0 not-italic">· im Archiv</span>
+                    </span>
+                  </template>
+                  <template v-else>
+                    <button @click="openPreview(a)" :title="canPreview(a) ? `${a.name} – Vorschau` : `${a.name} – herunterladen`"
+                      class="flex items-center gap-1.5 text-[11px] px-2 py-1 hover:text-coral min-w-0">
+                      <Icon name="paperclip" class="w-3.5 h-3.5 shrink-0" />
+                      <span class="truncate">{{ a.name }}</span>
+                      <span class="text-neutral-400 shrink-0">{{ fmtSize(a.size) }}</span>
+                    </button>
+                    <button @click="downloadAttachment(a)" title="Herunterladen" class="px-1.5 py-1 border-l border-[#efe4df] text-neutral-400 hover:text-coral shrink-0">
+                      <Icon name="download" class="w-3.5 h-3.5" />
+                    </button>
+                  </template>
                 </div>
               </div>
             </div>

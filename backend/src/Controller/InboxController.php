@@ -149,7 +149,7 @@ class InboxController extends AbstractController
         foreach ($c->emails as $e) {
             $atts = [];
             foreach ($attRepo->findBy(['email' => $e], ['id' => 'ASC']) as $a) {
-                $atts[] = ['id' => $a->id, 'name' => $a->filename, 'size' => $a->size, 'type' => $a->contentType];
+                $atts[] = ['id' => $a->id, 'name' => $a->filename, 'size' => $a->size, 'type' => $a->contentType, 'pruned' => null !== $a->prunedAt];
             }
             $messages[] = [
                 'dir' => $e->direction,
@@ -219,6 +219,9 @@ class InboxController extends AbstractController
         if (!$this->maySee($c, $user, $hasTask)) {
             return new Response('Kein Zugriff.', 403);
         }
+        if (null !== $att->prunedAt) {
+            return new Response('Anhang wurde nach Ablauf der Aufbewahrungsfrist entfernt – Original im Mail-Archiv.', 410);
+        }
         $path = $this->projectDir.'/var/attachments/'.$att->path;
         if (!is_file($path)) {
             return new Response('Datei nicht vorhanden.', 404);
@@ -242,6 +245,9 @@ class InboxController extends AbstractController
         $hasTask = isset($this->tasksByConversation()[$c->id]);
         if (!$this->maySee($c, $user, $hasTask)) {
             return new Response('Kein Zugriff.', 403);
+        }
+        if (null !== $att->prunedAt) {
+            return new Response('Anhang wurde nach Ablauf der Aufbewahrungsfrist entfernt – Original im Mail-Archiv.', 410);
         }
 
         if ($this->converter->isImage($att)) {

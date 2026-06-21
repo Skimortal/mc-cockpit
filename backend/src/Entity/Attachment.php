@@ -32,6 +32,10 @@ class Attachment
     #[ORM\Column(type: 'text', nullable: true)]
     public ?string $extractedText = null;
 
+    /** Gesetzt, wenn die Datei per Retention von der Platte entfernt wurde (Text/Metadaten bleiben). */
+    #[ORM\Column(type: 'datetime_immutable', nullable: true)]
+    public ?\DateTimeImmutable $prunedAt = null;
+
     #[ORM\Column(type: 'datetime_immutable')]
     public \DateTimeImmutable $createdAt;
 
