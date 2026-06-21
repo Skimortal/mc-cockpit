@@ -86,9 +86,9 @@ class MailboxController extends AbstractController
                 $m->$f = (string) $d[$f];
             }
         }
-        foreach (['imapPort', 'smtpPort'] as $f) {
+        foreach (['imapPort', 'smtpPort', 'attachmentRetentionMonths', 'mailRetentionMonths'] as $f) {
             if (isset($d[$f])) {
-                $m->$f = (int) $d[$f];
+                $m->$f = max(0, (int) $d[$f]);
             }
         }
         if (isset($d['active'])) {
@@ -129,6 +129,8 @@ class MailboxController extends AbstractController
             'username' => $m->username,
             'active' => $m->active,
             'hasPassword' => '' !== $m->password,
+            'attachmentRetentionMonths' => $m->attachmentRetentionMonths,
+            'mailRetentionMonths' => $m->mailRetentionMonths,
         ];
     }
 }

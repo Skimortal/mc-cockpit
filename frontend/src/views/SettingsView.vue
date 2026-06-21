@@ -15,7 +15,7 @@ const pwForm = reactive({ newPw: '', repeat: '' })
 const showPw = ref(false)
 const pwMsg = ref('')
 
-interface MB { id: number; name: string; email: string; scope: string; owner: { id: number; name: string } | null; imapHost: string; imapPort: number; imapEncryption: string; smtpHost: string; smtpPort: number; smtpEncryption: string; username: string; active: boolean; hasPassword: boolean }
+interface MB { id: number; name: string; email: string; scope: string; owner: { id: number; name: string } | null; imapHost: string; imapPort: number; imapEncryption: string; smtpHost: string; smtpPort: number; smtpEncryption: string; username: string; active: boolean; hasPassword: boolean; attachmentRetentionMonths: number; mailRetentionMonths: number }
 interface UserRow { id: number; email: string; firstName: string; lastName: string; name: string; isAdmin: boolean }
 
 const mailboxes = ref<MB[]>([])
@@ -27,7 +27,7 @@ const showForm = ref(false)
 const formId = ref<number | null>(null)
 const form = reactive<any>({})
 function blankForm(scope: string) {
-  return { scope, name: '', email: '', imapHost: 'mail.world4you.com', imapPort: 993, imapEncryption: 'ssl', smtpHost: 'smtp.world4you.com', smtpPort: 587, smtpEncryption: 'tls', username: '', password: '', active: true }
+  return { scope, name: '', email: '', imapHost: 'mail.world4you.com', imapPort: 993, imapEncryption: 'ssl', smtpHost: 'smtp.world4you.com', smtpPort: 587, smtpEncryption: 'tls', username: '', password: '', active: true, attachmentRetentionMonths: 12, mailRetentionMonths: 0 }
 }
 function openNew(scope: string) { formId.value = null; Object.assign(form, blankForm(scope)); showForm.value = true }
 function openEdit(m: MB) { formId.value = m.id; Object.assign(form, { ...m, password: '' }); showForm.value = true }
@@ -183,7 +183,7 @@ onMounted(async () => {
                   <span class="w-9 h-9 rounded-lg grid place-items-center text-white shrink-0" style="background:#eb5d4f"><Icon name="envelope" class="w-4 h-4" /></span>
                   <div class="min-w-0">
                     <div class="text-[13px] font-semibold text-navy">{{ m.name }}</div>
-                    <div class="text-[11px] text-neutral-500">{{ m.email }} · IMAP {{ m.imapHost }}:{{ m.imapPort }} · {{ m.hasPassword ? 'Passwort ✓' : 'kein Passwort' }} · {{ m.active ? 'aktiv' : 'inaktiv' }}</div>
+                    <div class="text-[11px] text-neutral-500">{{ m.email }} · IMAP {{ m.imapHost }}:{{ m.imapPort }} · {{ m.hasPassword ? 'Passwort ✓' : 'kein Passwort' }} · {{ m.active ? 'aktiv' : 'inaktiv' }} · Anhänge {{ m.attachmentRetentionMonths ? m.attachmentRetentionMonths + ' Mon.' : '∞' }}{{ m.mailRetentionMonths ? ', Mail ' + m.mailRetentionMonths + ' Mon.' : '' }}</div>
                   </div>
                   <div class="ml-auto flex gap-1">
                     <button @click="openEdit(m)" title="Bearbeiten" class="w-8 h-8 grid place-items-center rounded-lg text-neutral-500 hover:bg-beige hover:text-navy"><Icon name="pencil" class="w-4 h-4" /></button>
@@ -205,7 +205,7 @@ onMounted(async () => {
                   <span class="w-9 h-9 rounded-lg grid place-items-center text-white shrink-0" style="background:#414c65"><Icon name="envelope" class="w-4 h-4" /></span>
                   <div class="min-w-0">
                     <div class="text-[13px] font-semibold text-navy">{{ m.name }}</div>
-                    <div class="text-[11px] text-neutral-500">{{ m.email }} · IMAP {{ m.imapHost }}:{{ m.imapPort }} · {{ m.hasPassword ? 'Passwort ✓' : 'kein Passwort' }} · {{ m.active ? 'aktiv' : 'inaktiv' }}</div>
+                    <div class="text-[11px] text-neutral-500">{{ m.email }} · IMAP {{ m.imapHost }}:{{ m.imapPort }} · {{ m.hasPassword ? 'Passwort ✓' : 'kein Passwort' }} · {{ m.active ? 'aktiv' : 'inaktiv' }} · Anhänge {{ m.attachmentRetentionMonths ? m.attachmentRetentionMonths + ' Mon.' : '∞' }}{{ m.mailRetentionMonths ? ', Mail ' + m.mailRetentionMonths + ' Mon.' : '' }}</div>
                   </div>
                   <div class="ml-auto flex gap-1">
                     <button @click="openEdit(m)" title="Bearbeiten" class="w-8 h-8 grid place-items-center rounded-lg text-neutral-500 hover:bg-beige hover:text-navy"><Icon name="pencil" class="w-4 h-4" /></button>
@@ -270,6 +270,11 @@ onMounted(async () => {
           </div>
           <label class="text-[11px] text-neutral-500">Benutzername (leer = E-Mail)<input v-model="form.username" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px] text-ebony" /></label>
           <label class="text-[11px] text-neutral-500">Passwort{{ formId ? ' (leer = unverändert)' : '' }}<input v-model="form.password" type="password" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px] text-ebony" /></label>
+
+          <div class="col-span-2 mt-1 pt-2 border-t border-[#efe4df] text-[11px] uppercase tracking-wide text-neutral-400">Aufbewahrung</div>
+          <label class="text-[11px] text-neutral-500">Anhänge entfernen nach (Monate, 0 = nie)<input v-model.number="form.attachmentRetentionMonths" type="number" min="0" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px] text-ebony" /></label>
+          <label class="text-[11px] text-neutral-500">Ganze Mail löschen nach (Monate, 0 = nie)<input v-model.number="form.mailRetentionMonths" type="number" min="0" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px] text-ebony" /></label>
+          <div class="col-span-2 text-[10px] text-neutral-400 leading-snug">Anhang-Dateien werden nach der Frist von der Platte entfernt (Text bleibt durchsuchbar, Original im Mail-Archiv). Mails/Anhänge mit offener Aufgabe bleiben immer erhalten.</div>
         </div>
         <div class="mt-4 flex justify-end gap-2">
           <button @click="showForm = false" class="text-[13px] px-3 py-1.5 rounded-lg text-neutral-600 hover:bg-beige">Abbrechen</button>
