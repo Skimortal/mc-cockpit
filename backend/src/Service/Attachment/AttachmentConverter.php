@@ -55,6 +55,74 @@ final class AttachmentConverter
     }
 
     /**
+     * Liefert ein gecachtes Thumbnail-PNG (erste Seite / skaliertes Bild) oder null.
+     * Bilder werden per GD skaliert, PDF/Office per Gotenberg→PDF und pdftoppm gerastert.
+     */
+    public function thumbPathFor(string $src, string $filename, string $contentType): ?string
+    {
+        if (!is_file($src)) {
+            return null;
+        }
+        $cache = $src.'.thumb.png';
+        if (is_file($cache)) {
+            return $cache;
+        }
+        if ($this->isImageType($contentType) || preg_match('/\.(png|jpe?g|gif|webp|bmp)$/i', $filename)) {
+            return $this->imageThumb($src, $cache);
+        }
+        $pdf = $this->pdfPathFor($src, $filename, $contentType);
+        if (!$pdf) {
+            return null;
+        }
+
+        return $this->pdfThumb($pdf, $cache);
+    }
+
+    private function imageThumb(string $src, string $cache): ?string
+    {
+        if (!\function_exists('imagecreatefromstring')) {
+            return null;
+        }
+        try {
+            $data = @file_get_contents($src);
+            if (false === $data) {
+                return null;
+            }
+            $img = @imagecreatefromstring($data);
+            if (!$img) {
+                return null;
+            }
+            $w = imagesx($img);
+            $h = imagesy($img);
+            $max = 480;
+            $scale = min(1.0, $max / max(1, max($w, $h)));
+            $nw = max(1, (int) round($w * $scale));
+            $nh = max(1, (int) round($h * $scale));
+            $thumb = imagescale($img, $nw, $nh);
+            imagepng($thumb ?: $img, $cache, 6);
+            imagedestroy($img);
+            if ($thumb) {
+                imagedestroy($thumb);
+            }
+
+            return is_file($cache) ? $cache : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function pdfThumb(string $pdf, string $cache): ?string
+    {
+        // pdftoppm -singlefile hängt ".png" an den Prefix an -> Prefix ohne Endung übergeben.
+        $prefix = preg_replace('/\.png$/', '', $cache);
+        $cmd = sprintf('pdftoppm -png -singlefile -f 1 -l 1 -scale-to 480 %s %s 2>/dev/null',
+            escapeshellarg($pdf), escapeshellarg((string) $prefix));
+        @exec($cmd);
+
+        return is_file($cache) ? $cache : null;
+    }
+
+    /**
      * Generische PDF-Vorschau für eine beliebige Datei (Anhang oder Firmen-Dokument).
      * Original bei PDF, sonst per Gotenberg konvertiert und neben der Datei gecacht.
      */

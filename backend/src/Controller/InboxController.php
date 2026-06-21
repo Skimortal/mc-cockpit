@@ -273,6 +273,32 @@ class InboxController extends AbstractController
         return $r;
     }
 
+    /** Kleines Vorschaubild (erste Seite / skaliert). 204 = kein Thumbnail möglich. */
+    #[Route('/api/attachments/{id}/thumb', methods: ['GET'])]
+    public function thumbAttachment(Attachment $att, #[CurrentUser] ?User $user): Response
+    {
+        $c = $att->email?->conversation;
+        if (!$c) {
+            return new Response('', 404);
+        }
+        $hasTask = isset($this->tasksByConversation()[$c->id]);
+        if (!$this->maySee($c, $user, $hasTask)) {
+            return new Response('', 403);
+        }
+        if (null !== $att->prunedAt) {
+            return new Response('', 204);
+        }
+        $thumb = $this->converter->thumbPathFor($this->projectDir.'/var/attachments/'.$att->path, $att->filename, (string) $att->contentType);
+        if (!$thumb) {
+            return new Response('', 204);
+        }
+        $r = new BinaryFileResponse($thumb);
+        $r->headers->set('Content-Type', 'image/png');
+        $r->setContentDisposition(ResponseHeaderBag::DISPOSITION_INLINE, 'thumb.png');
+
+        return $r;
+    }
+
     /** Posteingang-Sichtbarkeit: global ODER eigenes persönliches ODER (geteilt, weil Aufgabe existiert). */
     private function maySee(Conversation $c, ?User $user, bool $hasTask): bool
     {

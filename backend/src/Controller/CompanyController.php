@@ -197,6 +197,25 @@ class CompanyController extends AbstractController
         return $r;
     }
 
+    /** Kleines Vorschaubild (erste Seite / skaliert). 204 = kein Thumbnail möglich. */
+    #[Route('/api/documents/{id}/thumb', methods: ['GET'])]
+    public function thumbDocument(Document $doc): Response
+    {
+        $src = null !== $doc->path ? $this->projectDir.'/var/documents/'.$doc->path : '';
+        if ('' === $src || !is_file($src)) {
+            return new Response('', 204);
+        }
+        $thumb = $this->converter->thumbPathFor($src, $doc->name, (string) $doc->contentType);
+        if (!$thumb) {
+            return new Response('', 204);
+        }
+        $r = new BinaryFileResponse($thumb);
+        $r->headers->set('Content-Type', 'image/png');
+        $r->setContentDisposition(ResponseHeaderBag::DISPOSITION_INLINE, 'thumb.png');
+
+        return $r;
+    }
+
     #[Route('/api/companies/{id}', methods: ['DELETE'])]
     public function deleteCompany(Company $c): JsonResponse
     {
