@@ -5,6 +5,7 @@ import api from '../api'
 import { useAuth } from '../stores/auth'
 import AppTopbar from '../components/AppTopbar.vue'
 import Icon from '../components/Icon.vue'
+import { confirmDialog } from '../composables/dialog'
 
 const auth = useAuth()
 const route = useRoute()
@@ -14,10 +15,11 @@ interface Mailbox { id: number; name: string; email: string; scope: string; mine
 interface Conv { id: number; from: string; email: string; subject: string; lastMessageAt: string; messageCount: number; state: string; taskId: number | null; owner: string | null; mailboxName: string; mailboxScope: string }
 interface Person { id: number; name: string }
 interface Comment { author: string; body: string; createdAt: string }
+interface TaskFile { id: number; name: string; size: number; ext: string; uploadedBy: string | null; date: string; preview: boolean }
 interface Task {
   id: number; title: string; type: string; status: string; priority: string; dueDate: string | null; overdue?: boolean
   aiSummary: string | null; suggestedAssignee: string | null; assignee: Person | null
-  conversationId: number | null; companyId: number | null; companyName: string | null; tags: string[]; comments: Comment[]
+  conversationId: number | null; companyId: number | null; companyName: string | null; tags: string[]; comments: Comment[]; files: TaskFile[]
 }
 interface Att { id: number; name: string; size: number; type: string | null; pruned?: boolean }
 interface Msg { dir: string; who: string; to: string; time: string; body: string; attachments?: Att[] }
@@ -191,7 +193,7 @@ async function manualFetch() {
 const lastAtt = ref<number | null>(null)
 async function selectConv(id: number) {
   selConvId.value = id
-  replyText.value = ''; replyMsg.value = ''; commentText.value = ''
+  replyText.value = ''; replyMsg.value = ''; commentText.value = ''; explanation.value = ''
   const { data } = await api.get(`/api/conversations/${id}`)
   detail.value = data
   // Postfach der Konversation aktiv schalten, damit sie links erscheint/markiert ist.
@@ -230,6 +232,60 @@ async function convertToTask() {
     await api.post(`/api/conversations/${selConvId.value}/to-task`)
     await Promise.all([loadBoard(), loadInbox()])
   } finally { converting.value = false }
+}
+// --- Datei-Anhänge an der Aufgabe ---
+const taskFileInput = ref<HTMLInputElement | null>(null)
+const taskUploading = ref(false)
+function triggerTaskUpload() {
+  if (taskFileInput.value) taskFileInput.value.value = ''
+  taskFileInput.value?.click()
+}
+async function onTaskFilePicked(e: Event) {
+  const files = (e.target as HTMLInputElement).files
+  if (!files?.length || !selTask.value) return
+  taskUploading.value = true
+  try {
+    for (const f of Array.from(files)) {
+      const fd = new FormData()
+      fd.append('file', f)
+      await api.post(`/api/tasks/${selTask.value.id}/files`, fd)
+    }
+    await loadBoard()
+  } finally { taskUploading.value = false }
+}
+async function downloadTaskFile(f: TaskFile) {
+  const win = f.preview ? window.open('', '_blank') : null
+  try {
+    const r = await api.get(`/api/files/${f.id}/${f.preview ? 'preview' : 'download'}`, { responseType: 'blob' })
+    const url = URL.createObjectURL(r.data as Blob)
+    if (f.preview && win) { win.location.href = url; setTimeout(() => URL.revokeObjectURL(url), 60000) }
+    else { const a = document.createElement('a'); a.href = url; a.download = f.name; a.click(); URL.revokeObjectURL(url) }
+  } catch { if (win) win.close() }
+}
+async function delTaskFile(f: TaskFile) {
+  if (!(await confirmDialog(`Datei „${f.name}" löschen?`, { title: 'Datei löschen', danger: true, okText: 'Löschen' }))) return
+  await api.delete(`/api/files/${f.id}`)
+  await loadBoard()
+}
+function fmtFileSize(n: number): string {
+  if (!n) return ''
+  if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB'
+  if (n >= 1024) return Math.round(n / 1024) + ' KB'
+  return n + ' B'
+}
+
+const explaining = ref(false)
+const explanation = ref('')
+async function explainConv() {
+  if (!selConvId.value) return
+  explaining.value = true
+  explanation.value = ''
+  try {
+    const { data } = await api.post(`/api/conversations/${selConvId.value}/explain`)
+    explanation.value = data.explanation || ''
+  } catch {
+    explanation.value = '⚠️ KI-Erklärung fehlgeschlagen.'
+  } finally { explaining.value = false }
 }
 async function assign(task: Task, userId: number | '') {
   await api.post(`/api/tasks/${task.id}/assign`, { userId: userId === '' ? null : userId })
@@ -465,9 +521,42 @@ onBeforeUnmount(() => clearInterval(pollTimer))
                   <button @click="addComment(selTask)" class="text-[11px] px-2 py-1 rounded-lg bg-navy text-white">+</button>
                 </div>
               </div>
+              <!-- Datei-Anhänge an der Aufgabe -->
+              <div class="mt-3">
+                <div class="flex items-center justify-between mb-1">
+                  <div class="text-[10px] uppercase tracking-wide text-neutral-400">Dateien</div>
+                  <button @click="triggerTaskUpload" :disabled="taskUploading" class="text-[11px] text-coral font-medium disabled:opacity-50">{{ taskUploading ? 'Lädt hoch…' : '+ Datei (z. B. ZIP)' }}</button>
+                  <input ref="taskFileInput" type="file" multiple class="hidden" @change="onTaskFilePicked" />
+                </div>
+                <div v-for="f in selTask.files" :key="f.id" class="flex items-center gap-2 bg-white border border-[#e6dad6] rounded-lg px-2 py-1.5 mb-1">
+                  <span class="w-7 h-7 rounded bg-navy/10 text-navy text-[9px] grid place-items-center font-semibold uppercase shrink-0">{{ f.ext }}</span>
+                  <button @click="downloadTaskFile(f)" class="text-[12px] text-ebony text-left hover:text-coral truncate min-w-0 flex-1" :title="f.preview ? 'Öffnen' : 'Herunterladen'">{{ f.name }}</button>
+                  <span class="text-[10px] text-neutral-300 shrink-0">{{ fmtFileSize(f.size) }}</span>
+                  <button @click="downloadTaskFile(f)" :title="f.preview ? 'Öffnen' : 'Herunterladen'" class="w-6 h-6 grid place-items-center rounded text-neutral-400 hover:bg-beige hover:text-navy shrink-0"><Icon :name="f.preview ? 'eye' : 'download'" class="w-3.5 h-3.5" /></button>
+                  <button @click="delTaskFile(f)" title="Löschen" class="w-6 h-6 grid place-items-center rounded text-neutral-400 hover:bg-red-50 hover:text-red-600 shrink-0"><Icon name="trash" class="w-3.5 h-3.5" /></button>
+                </div>
+                <div v-if="!selTask.files.length" class="text-[11px] text-neutral-400">Keine Dateien — „+ Datei" (ZIP/PDF/…), dann z. B. Ljubisa zuweisen.</div>
+              </div>
             </div>
             <div v-else>
-              <button @click="convertToTask" :disabled="converting" class="w-full py-2.5 rounded-xl bg-coral text-white text-sm font-medium hover:bg-coral-dark disabled:opacity-50">{{ converting ? '✨ KI fasst zusammen…' : '✨ In Aufgabe umwandeln' }}</button>
+              <div class="flex gap-2">
+                <button @click="convertToTask" :disabled="converting || explaining" class="flex-1 py-2.5 rounded-xl bg-coral text-white text-sm font-medium hover:bg-coral-dark disabled:opacity-50">✨ In Aufgabe umwandeln</button>
+                <button @click="explainConv" :disabled="converting || explaining" class="px-3 py-2.5 rounded-xl border border-coral/40 text-coral text-sm font-medium hover:bg-coral/10 disabled:opacity-50 whitespace-nowrap">{{ explaining ? '🤔 …' : '🔎 KI erklärt' }}</button>
+              </div>
+
+              <!-- Ladescreen: KI wandelt Mail in Aufgabe um -->
+              <div v-if="converting" class="mt-3 flex items-center gap-3 p-4 rounded-xl bg-coral/5 border border-coral/20">
+                <span class="inline-block w-5 h-5 border-2 border-coral/30 border-t-coral rounded-full animate-spin shrink-0"></span>
+                <div class="text-[12.5px] text-[#8a3328]"><b>KI analysiert die Mail…</b><br><span class="text-neutral-500">Zusammenfassung, Frist & Zuständigen werden erkannt — einen Moment.</span></div>
+              </div>
+
+              <!-- KI-Erklärung -->
+              <div v-if="explaining" class="mt-3 flex items-center gap-2 p-3 rounded-xl bg-beige-soft text-[12px] text-neutral-500">
+                <span class="inline-block w-4 h-4 border-2 border-coral/30 border-t-coral rounded-full animate-spin shrink-0"></span> KI liest den Verlauf…
+              </div>
+              <div v-else-if="explanation" class="mt-3 p-3 rounded-xl bg-navy/5 border border-navy/15 text-[12.5px] text-ebony whitespace-pre-wrap leading-relaxed">
+                <div class="text-[10px] uppercase tracking-wide text-navy/60 mb-1">🔎 KI-Erklärung</div>{{ explanation }}
+              </div>
             </div>
 
             <!-- Konversation, neueste zuerst -->

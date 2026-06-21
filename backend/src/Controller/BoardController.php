@@ -166,6 +166,17 @@ class BoardController extends AbstractController
                 'body' => $k->body,
                 'createdAt' => $k->createdAt->format('Y-m-d H:i'),
             ], $t->comments->toArray()),
+            'files' => array_map(fn (\App\Entity\TaskFile $f) => [
+                'id' => $f->id,
+                'name' => $f->filename,
+                'size' => $f->size,
+                'ext' => strtoupper((string) (pathinfo($f->filename, \PATHINFO_EXTENSION) ?: 'DATEI')),
+                'uploadedBy' => $f->uploadedBy,
+                'date' => $f->createdAt->format('Y-m-d'),
+                'preview' => str_starts_with(mb_strtolower((string) $f->contentType), 'image/')
+                    || str_contains(mb_strtolower((string) $f->contentType), 'pdf')
+                    || (bool) preg_match('/\.(pdf|png|jpe?g|gif|webp|docx?|xlsx?|pptx?|odt|ods|odp)$/i', $f->filename),
+            ], $this->em->getRepository(\App\Entity\TaskFile::class)->findBy(['task' => $t], ['id' => 'ASC'])),
             'source' => $src ? [
                 'subject' => $src->subject,
                 'from' => $src->fromAddress,

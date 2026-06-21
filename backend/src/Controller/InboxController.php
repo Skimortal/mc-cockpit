@@ -10,6 +10,7 @@ use App\Entity\User;
 use App\Mail\ConversationThreader;
 use App\Mail\ImapPoller;
 use App\Service\Attachment\AttachmentConverter;
+use App\Service\Llm\LlmClient;
 use App\Service\Triage\EmailTriageService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -31,6 +32,7 @@ class InboxController extends AbstractController
         private readonly ImapPoller $poller,
         private readonly ConversationThreader $threader,
         private readonly AttachmentConverter $converter,
+        private readonly LlmClient $llm,
         #[Autowire('%kernel.project_dir%')] private readonly string $projectDir = '',
     ) {
     }
@@ -205,6 +207,47 @@ class InboxController extends AbstractController
         }
 
         return $this->json(['ok' => true, 'taskId' => $task->id]);
+    }
+
+    /** KI erklärt die Konversation in wenigen Stichpunkten (ohne eine Aufgabe anzulegen). */
+    #[Route('/api/conversations/{id}/explain', methods: ['POST'])]
+    public function explain(Conversation $c, #[CurrentUser] ?User $user): JsonResponse
+    {
+        $hasTask = isset($this->tasksByConversation()[$c->id]);
+        if (!$this->maySee($c, $user, $hasTask)) {
+            return $this->json(['error' => 'Kein Zugriff.'], 403);
+        }
+
+        $system = <<<TXT
+            Du hilfst der MOST Connect KG (Handelsvertretung). Erkläre die unten stehende
+            E-Mail-Konversation kurz und klar auf Deutsch:
+            • Worum geht es? (1 Satz)
+            • Was will der Absender / was ist die Kernaussage?
+            • Was ist zu tun / nächste Schritte?
+            Antworte knapp in Stichpunkten, ohne Anrede/Floskeln. Erfinde nichts, was nicht im Verlauf steht.
+            TXT;
+
+        try {
+            $text = $this->llm->complete($system, $this->threadContext($c));
+        } catch (\Throwable) {
+            return $this->json(['error' => 'KI-Erklärung fehlgeschlagen.'], 502);
+        }
+
+        return $this->json(['explanation' => trim($text)]);
+    }
+
+    /** E-Mail-Verlauf einer Konversation als Klartext für die KI. */
+    private function threadContext(Conversation $c): string
+    {
+        $lines = ['Betreff: '.$c->subject, ''];
+        foreach ($c->emails as $e) {
+            $who = 'out' === $e->direction ? 'WIR' : ($e->fromAddress ?: ($c->customerName ?? 'Kunde'));
+            $lines[] = sprintf('[%s, %s] %s', $who, $e->occurredAt->format('Y-m-d H:i'), $e->subject ?? '');
+            $lines[] = mb_substr(trim((string) ($e->bodyText ?: strip_tags((string) $e->bodyHtml))), 0, 3000);
+            $lines[] = '';
+        }
+
+        return implode("\n", $lines);
     }
 
     /** Anhang herunterladen (sichtbarkeitsgeprüft). Frontend lädt per axios mit JWT als Blob. */
