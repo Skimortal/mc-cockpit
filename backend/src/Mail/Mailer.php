@@ -86,7 +86,7 @@ final class Mailer
      * Interne Benachrichtigung an den zuständigen Kollegen, dass ihm eine Aufgabe
      * zugewiesen wurde (mit Link). Versand über ein Postfach mit SMTP-Passwort.
      */
-    public function sendAssignmentNotice(Task $task, string $toEmail, string $toName, ?string $actorName, string $taskUrl, int $fileCount): void
+    public function sendAssignmentNotice(Task $task, string $toEmail, string $toName, ?string $actorName, string $taskUrl, int $fileCount, ?string $note = null): void
     {
         $mailbox = $this->pickSmtpMailbox($task->conversation?->mailbox);
         if (!$mailbox) {
@@ -101,6 +101,10 @@ final class Mailer
             '',
             '    '.$task->title,
         ];
+        if (null !== $note && '' !== trim($note)) {
+            $lines[] = '';
+            $lines[] = trim($note);
+        }
         if ($task->aiSummary) {
             $lines[] = '';
             $lines[] = $task->aiSummary;

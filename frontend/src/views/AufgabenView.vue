@@ -5,7 +5,7 @@ import api from '../api'
 import { useAuth } from '../stores/auth'
 import AppTopbar from '../components/AppTopbar.vue'
 import Icon from '../components/Icon.vue'
-import { confirmDialog } from '../composables/dialog'
+import { confirmDialog, promptDialog } from '../composables/dialog'
 
 const auth = useAuth()
 const route = useRoute()
@@ -28,6 +28,9 @@ interface ConvDetail { id: number; subject: string; customerName: string; custom
 const TAGS = ['Ausschreibung', 'Muster', 'Reklamation', 'Labor', 'Logistik', 'Rechnung', 'Etikett', 'ASN', 'Allgemein']
 const STATUS: Record<string, string> = { open: 'Offen', in_progress: 'In Arbeit', waiting: 'Wartet', done: 'Erledigt' }
 const STATUS_KEYS = ['open', 'in_progress', 'waiting', 'done']
+const PRIO: Record<string, string> = { high: 'Hoch', normal: 'Normal', low: 'Niedrig' }
+const PRIO_KEYS = ['high', 'normal', 'low']
+function prioStyle(p: string) { return p === 'high' ? 'background:#eb5d4f' : p === 'low' ? 'background:#9aa7b8' : 'background:#414c65' }
 
 const mailboxes = ref<Mailbox[]>([])
 const mailboxFilter = ref<string>('') // '' = alle | mailbox id
@@ -306,14 +309,23 @@ async function assign(task: Task, userId: number | '') {
 }
 const notifying = ref(false)
 async function notifyAssignee(task: Task) {
+  const r = await promptDialog(
+    [{ key: 'message', label: 'Optionale Nachricht (zusätzlich zu den Kommentaren) — leer lassen für nur Kommentare/Link', type: 'textarea', value: '' }],
+    { title: '📧 Zuständigen benachrichtigen', okText: 'Senden' },
+  )
+  if (r === null) return
   notifying.value = true
   notifyMsg.value = ''
   try {
-    const { data } = await api.post(`/api/tasks/${task.id}/notify-assignee`)
+    const { data } = await api.post(`/api/tasks/${task.id}/notify-assignee`, { message: r.message || '' })
     notifyMsg.value = '✓ E-Mail gesendet an ' + (data.to || 'Zuständigen')
   } catch (e: any) {
     notifyMsg.value = '⚠️ ' + (e?.response?.data?.error || 'E-Mail fehlgeschlagen')
   } finally { notifying.value = false }
+}
+async function setPriority(task: Task, p: string) {
+  await api.post(`/api/tasks/${task.id}/priority`, { priority: p })
+  await loadBoard()
 }
 async function setStatus(task: Task, status: string) {
   await api.post(`/api/tasks/${task.id}/status`, { status })
@@ -496,54 +508,35 @@ onBeforeUnmount(() => clearInterval(pollTimer))
             <div v-if="selTask" class="p-3 rounded-xl bg-beige-soft border border-[#e6dad6]">
               <div class="text-[13px] font-semibold text-ebony">{{ selTask.title }}</div>
               <div v-if="selTask.aiSummary" class="mt-1 p-2 rounded-lg bg-coral/10 text-[12px] text-[#8a3328]"><b>KI:</b> {{ selTask.aiSummary }}</div>
+
+              <!-- Status + Priorität (Schnellzustand) -->
+              <div class="mt-2 flex items-center gap-1 flex-wrap">
+                <button v-for="s in STATUS_KEYS" :key="s" @click="setStatus(selTask, s)" class="text-[10px] px-2 py-1 rounded-lg" :class="selTask.status === s ? 'bg-coral text-white' : 'bg-white text-neutral-600 border border-[#e6dad6]'">{{ STATUS[s] }}</button>
+              </div>
+              <div class="mt-1.5 flex items-center gap-1 flex-wrap text-[11px]">
+                <span class="text-neutral-500 mr-0.5">Priorität:</span>
+                <button v-for="p in PRIO_KEYS" :key="p" @click="setPriority(selTask, p)" class="text-[10px] px-2 py-1 rounded-lg" :class="selTask.priority === p ? 'text-white' : 'bg-white text-neutral-600 border border-[#e6dad6]'" :style="selTask.priority === p ? prioStyle(p) : ''">{{ PRIO[p] }}</button>
+              </div>
+
+              <!-- Zuständig + Benachrichtigen -->
               <div class="mt-2 flex items-center gap-2 text-[11px]">
                 <span class="text-neutral-500">Zuständig:</span>
                 <select :value="selTask.assignee?.id ?? ''" @change="assign(selTask, ($event.target as HTMLSelectElement).value === '' ? '' : Number(($event.target as HTMLSelectElement).value))" class="border border-[#e0d2cd] rounded-lg px-2 py-1 text-[11px] bg-white">
                   <option value="">— Unzugewiesen —</option>
                   <option v-for="p in team" :key="p.id" :value="p.id">{{ p.name }}</option>
                 </select>
-                <button v-if="selTask.assignee" @click="notifyAssignee(selTask)" :disabled="notifying" title="E-Mail an den Zuständigen – inkl. Kommentare, Datei-Hinweis und Link zur Aufgabe" class="ml-auto text-[11px] px-2 py-1 rounded-lg bg-navy/10 text-navy hover:bg-navy/20 disabled:opacity-50 whitespace-nowrap">{{ notifying ? '…' : '📧 Benachrichtigen' }}</button>
+                <button v-if="selTask.assignee" @click="notifyAssignee(selTask)" :disabled="notifying" title="E-Mail an den Zuständigen – inkl. Kommentare, optionaler Nachricht, Datei-Hinweis und Link" class="ml-auto text-[11px] px-2 py-1 rounded-lg bg-navy/10 text-navy hover:bg-navy/20 disabled:opacity-50 whitespace-nowrap">{{ notifying ? '…' : '📧 Benachrichtigen' }}</button>
               </div>
               <div v-if="notifyMsg" class="mt-1 text-[11px]" :class="notifyMsg.startsWith('⚠️') ? 'text-red-600' : 'text-green-700'">{{ notifyMsg }}</div>
-              <div class="mt-2 flex items-center gap-2 text-[11px]">
-                <span class="text-neutral-500">Kunde:</span>
-                <select :value="selTask.companyId ?? ''" @change="setCompany(selTask, ($event.target as HTMLSelectElement).value === '' ? '' : Number(($event.target as HTMLSelectElement).value))" class="border border-[#e0d2cd] rounded-lg px-2 py-1 text-[11px] bg-white">
-                  <option value="">— Kein Kunde —</option>
-                  <option v-for="co in companies" :key="co.id" :value="co.id">{{ co.name }}</option>
-                </select>
-              </div>
-              <div class="mt-2 flex items-center gap-1 flex-wrap">
-                <button v-for="s in STATUS_KEYS" :key="s" @click="setStatus(selTask, s)" class="text-[10px] px-2 py-1 rounded-lg" :class="selTask.status === s ? 'bg-coral text-white' : 'bg-white text-neutral-600 border border-[#e6dad6]'">{{ STATUS[s] }}</button>
-              </div>
-              <!-- Fälligkeit / Wiedervorlage -->
-              <div class="mt-2 flex items-center gap-1.5 flex-wrap text-[11px]">
-                <span class="text-neutral-500">Fällig:</span>
-                <span v-if="selTask.dueDate" class="px-1.5 py-0.5 rounded" :class="selTask.overdue ? 'bg-coral text-white' : 'bg-white border border-[#e6dad6] text-neutral-600'">{{ selTask.dueDate }}<span v-if="selTask.overdue"> · überfällig</span></span>
-                <span v-else class="text-neutral-400">—</span>
-                <input type="date" :value="selTask.dueDate || ''" @change="setDue(selTask, ($event.target as HTMLInputElement).value || null)" class="border border-[#e0d2cd] rounded-lg px-1.5 py-0.5 text-[11px] bg-white ml-auto" />
-              </div>
-              <div class="mt-1 flex items-center gap-1 flex-wrap text-[10px]">
-                <span class="text-neutral-400">Wiedervorlage:</span>
-                <button @click="snooze(selTask, 1)" class="px-1.5 py-0.5 rounded bg-white border border-[#e6dad6] hover:border-coral">morgen</button>
-                <button @click="snooze(selTask, 3)" class="px-1.5 py-0.5 rounded bg-white border border-[#e6dad6] hover:border-coral">+3 Tage</button>
-                <button @click="snooze(selTask, 7)" class="px-1.5 py-0.5 rounded bg-white border border-[#e6dad6] hover:border-coral">nächste Woche</button>
-                <button v-if="selTask.dueDate" @click="setDue(selTask, null)" class="px-1.5 py-0.5 rounded text-neutral-400 hover:text-coral">entfernen</button>
-              </div>
-              <button v-if="selTask.status !== 'done'" @click="setStatus(selTask, 'done')" class="mt-2 w-full py-2 rounded-xl text-white text-sm font-medium" style="background:#3f9d6b">✓ Aufgabe erledigt</button>
-              <!-- Tags -->
-              <div class="mt-3"><div class="text-[10px] uppercase tracking-wide text-neutral-400 mb-1">Tags</div>
-                <div class="flex flex-wrap gap-1">
-                  <button v-for="tag in TAGS" :key="tag" @click="toggleTag(selTask, tag)" class="text-[10px] px-1.5 py-0.5 rounded" :style="selTask.tags.includes(tag) ? badgeStyle(tag) : 'background:#f0e7e3;color:#b7a9a3'">{{ tag }}</button>
-                </div>
-              </div>
-              <!-- Kommentare -->
-              <div class="mt-3"><div class="text-[10px] uppercase tracking-wide text-neutral-400 mb-1">Kommentare</div>
+
+              <!-- Kommentare / Anweisungen -->
+              <div class="mt-3"><div class="text-[10px] uppercase tracking-wide text-neutral-400 mb-1">Kommentare / Anweisungen</div>
                 <div v-for="(k, i) in selTask.comments" :key="i" class="text-[11px] mb-1">
                   <span class="font-semibold text-navy">{{ k.author }}</span> <span class="text-neutral-400">{{ k.createdAt.slice(5, 16) }}</span><br>
                   <span class="text-neutral-600 whitespace-pre-wrap">{{ k.body }}</span>
                 </div>
                 <div class="flex gap-1 mt-1">
-                  <input v-model="commentText" placeholder="Kommentar…" @keyup.enter="addComment(selTask)" class="flex-1 border border-[#e0d2cd] rounded-lg px-2 py-1 text-[11px]" />
+                  <input v-model="commentText" placeholder="Kommentar / Anweisung…" @keyup.enter="addComment(selTask)" class="flex-1 border border-[#e0d2cd] rounded-lg px-2 py-1 text-[11px]" />
                   <button @click="addComment(selTask)" class="text-[11px] px-2 py-1 rounded-lg bg-navy text-white">+</button>
                 </div>
               </div>
@@ -567,6 +560,35 @@ onBeforeUnmount(() => clearInterval(pollTimer))
                   <span v-if="!taskUploading && !taskDragOver" class="text-[10px] text-neutral-400">oder klicken (ZIP/PDF/… bis 50 MB)</span>
                 </button>
                 <input ref="taskFileInput" type="file" multiple class="hidden" @change="onTaskFilePicked" />
+              </div>
+
+              <!-- Sekundär: Kunde, Fälligkeit, Tags -->
+              <div class="mt-3 pt-3 border-t border-[#e6dad6] space-y-2">
+                <div class="flex items-center gap-2 text-[11px]">
+                  <span class="text-neutral-500">Kunde:</span>
+                  <select :value="selTask.companyId ?? ''" @change="setCompany(selTask, ($event.target as HTMLSelectElement).value === '' ? '' : Number(($event.target as HTMLSelectElement).value))" class="border border-[#e0d2cd] rounded-lg px-2 py-1 text-[11px] bg-white">
+                    <option value="">— Kein Kunde —</option>
+                    <option v-for="co in companies" :key="co.id" :value="co.id">{{ co.name }}</option>
+                  </select>
+                </div>
+                <div class="flex items-center gap-1.5 flex-wrap text-[11px]">
+                  <span class="text-neutral-500">Fällig:</span>
+                  <span v-if="selTask.dueDate" class="px-1.5 py-0.5 rounded" :class="selTask.overdue ? 'bg-coral text-white' : 'bg-white border border-[#e6dad6] text-neutral-600'">{{ selTask.dueDate }}<span v-if="selTask.overdue"> · überfällig</span></span>
+                  <span v-else class="text-neutral-400">—</span>
+                  <input type="date" :value="selTask.dueDate || ''" @change="setDue(selTask, ($event.target as HTMLInputElement).value || null)" class="border border-[#e0d2cd] rounded-lg px-1.5 py-0.5 text-[11px] bg-white ml-auto" />
+                </div>
+                <div class="flex items-center gap-1 flex-wrap text-[10px]">
+                  <span class="text-neutral-400">Wiedervorlage:</span>
+                  <button @click="snooze(selTask, 1)" class="px-1.5 py-0.5 rounded bg-white border border-[#e6dad6] hover:border-coral">morgen</button>
+                  <button @click="snooze(selTask, 3)" class="px-1.5 py-0.5 rounded bg-white border border-[#e6dad6] hover:border-coral">+3 Tage</button>
+                  <button @click="snooze(selTask, 7)" class="px-1.5 py-0.5 rounded bg-white border border-[#e6dad6] hover:border-coral">nächste Woche</button>
+                  <button v-if="selTask.dueDate" @click="setDue(selTask, null)" class="px-1.5 py-0.5 rounded text-neutral-400 hover:text-coral">entfernen</button>
+                </div>
+                <div><div class="text-[10px] uppercase tracking-wide text-neutral-400 mb-1">Tags</div>
+                  <div class="flex flex-wrap gap-1">
+                    <button v-for="tag in TAGS" :key="tag" @click="toggleTag(selTask, tag)" class="text-[10px] px-1.5 py-0.5 rounded" :style="selTask.tags.includes(tag) ? badgeStyle(tag) : 'background:#f0e7e3;color:#b7a9a3'">{{ tag }}</button>
+                  </div>
+                </div>
               </div>
             </div>
             <div v-else>

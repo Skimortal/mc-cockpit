@@ -76,21 +76,35 @@ class BoardController extends AbstractController
         return $this->json($out);
     }
 
-    /** Manuell: den aktuell Zuständigen (erneut) per E-Mail benachrichtigen. */
+    #[Route('/api/tasks/{id}/priority', methods: ['POST'])]
+    public function priority(Task $task, Request $request): JsonResponse
+    {
+        $p = json_decode($request->getContent(), true)['priority'] ?? null;
+        if (!\in_array($p, ['low', 'normal', 'high'], true)) {
+            return $this->json(['error' => 'invalid priority'], 400);
+        }
+        $task->priority = $p;
+        $this->em->flush();
+
+        return $this->json($this->taskArr($task));
+    }
+
+    /** Manuell: den aktuell Zuständigen (erneut) per E-Mail benachrichtigen (optional mit Nachricht). */
     #[Route('/api/tasks/{id}/notify-assignee', methods: ['POST'])]
-    public function notifyAssignee(Task $task, #[CurrentUser] ?User $user): JsonResponse
+    public function notifyAssignee(Task $task, Request $request, #[CurrentUser] ?User $user): JsonResponse
     {
         if (!$task->assignee || !$task->assignee->getEmail()) {
             return $this->json(['error' => 'Aufgabe ist niemandem mit E-Mail-Adresse zugewiesen.'], 422);
         }
-        if (!$this->emailAssignee($task, $user)) {
+        $note = trim((string) (json_decode($request->getContent(), true)['message'] ?? ''));
+        if (!$this->emailAssignee($task, $user, $note ?: null)) {
             return $this->json(['error' => 'E-Mail konnte nicht versendet werden (SMTP-Postfach/Passwort prüfen).'], 502);
         }
 
         return $this->json(['ok' => true, 'to' => $task->assignee->getEmail()]);
     }
 
-    private function emailAssignee(Task $task, ?User $actor): bool
+    private function emailAssignee(Task $task, ?User $actor, ?string $note = null): bool
     {
         $assignee = $task->assignee;
         if (!$assignee || !$assignee->getEmail()) {
@@ -102,7 +116,7 @@ class BoardController extends AbstractController
         $toName = trim($assignee->getFirstName().' '.$assignee->getLastName()) ?: $assignee->getEmail();
         $actorName = $actor ? (trim($actor->getFirstName().' '.$actor->getLastName()) ?: $actor->getEmail()) : null;
         try {
-            $this->mailer->sendAssignmentNotice($task, $assignee->getEmail(), $toName, $actorName, $url, $fileCount);
+            $this->mailer->sendAssignmentNotice($task, $assignee->getEmail(), $toName, $actorName, $url, $fileCount, $note);
 
             return true;
         } catch (\Throwable) {
