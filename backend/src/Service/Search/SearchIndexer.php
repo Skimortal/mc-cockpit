@@ -19,6 +19,7 @@ final class SearchIndexer
     public const CONVERSATIONS = 'conversations';
     public const COMPANIES = 'companies';
     public const DOCUMENTS = 'documents';
+    public const ATTACHMENTS = 'attachments';
 
     private Client $client;
 
@@ -38,7 +39,7 @@ final class SearchIndexer
 
     public function ensureSettings(): void
     {
-        foreach ([self::TASKS, self::CONVERSATIONS, self::COMPANIES, self::DOCUMENTS] as $i) {
+        foreach ([self::TASKS, self::CONVERSATIONS, self::COMPANIES, self::DOCUMENTS, self::ATTACHMENTS] as $i) {
             try {
                 $this->client->createIndex($i, ['primaryKey' => 'id']);
             } catch (\Throwable) {
@@ -49,8 +50,10 @@ final class SearchIndexer
         $this->client->index(self::TASKS)->updateSearchableAttributes(['title', 'summary']);
         $this->client->index(self::COMPANIES)->updateSearchableAttributes(['name', 'subtitle', 'tags', 'fields']);
         $this->client->index(self::DOCUMENTS)->updateSearchableAttributes(['name', 'companyName', 'body']);
+        $this->client->index(self::ATTACHMENTS)->updateFilterableAttributes(['mailboxScope', 'ownerId', 'hasTask']);
+        $this->client->index(self::ATTACHMENTS)->updateSearchableAttributes(['name', 'body']);
         // Tippfehler schon ab kurzen Wörtern tolerieren (Default: 5/9).
-        foreach ([self::TASKS, self::CONVERSATIONS, self::COMPANIES, self::DOCUMENTS] as $i) {
+        foreach ([self::TASKS, self::CONVERSATIONS, self::COMPANIES, self::DOCUMENTS, self::ATTACHMENTS] as $i) {
             $this->client->index($i)->updateTypoTolerance(['minWordSizeForTypos' => ['oneTypo' => 4, 'twoTypos' => 8]]);
         }
     }
@@ -65,6 +68,10 @@ final class SearchIndexer
         if ($docs) {
             $this->client->index(self::DOCUMENTS)->addDocuments(array_map([$this, 'documentDoc'], array_values($docs)), 'id');
         }
+        $atts = array_filter($this->em->getRepository(Attachment::class)->findAll(), fn (Attachment $a) => null !== $a->id && $a->email?->conversation);
+        if ($atts) {
+            $this->client->index(self::ATTACHMENTS)->addDocuments(array_map([$this, 'attachmentDoc'], array_values($atts)), 'id');
+        }
     }
 
     public function indexTask(Task $t): void
@@ -78,6 +85,19 @@ final class SearchIndexer
     public function indexConversation(Conversation $c): void
     {
         $this->safe(fn () => $this->client->index(self::CONVERSATIONS)->addDocuments([$this->convDoc($c)], 'id'));
+        // Anhänge der Konversation als eigene Suchtreffer mitführen.
+        $docs = [];
+        $attRepo = $this->em->getRepository(Attachment::class);
+        foreach ($c->emails as $e) {
+            foreach ($attRepo->findBy(['email' => $e]) as $a) {
+                if (null !== $a->id) {
+                    $docs[] = $this->attachmentDoc($a);
+                }
+            }
+        }
+        if ($docs) {
+            $this->safe(fn () => $this->client->index(self::ATTACHMENTS)->addDocuments($docs, 'id'));
+        }
     }
 
     public function indexCompany(Company $c): void
@@ -138,6 +158,37 @@ final class SearchIndexer
             'date' => $eff?->format('Y-m-d H:i'),
             'mailboxId' => $mb?->id ?? 0,
             'mailboxName' => $mb?->name ?? '',
+            'mailboxScope' => $mb?->scope ?? 'none',
+            'ownerId' => $mb?->owner?->getId() ?? 0,
+            'hasTask' => $hasTask,
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    public function attachmentDoc(Attachment $a): array
+    {
+        $c = $a->email?->conversation;
+        $mb = $c?->mailbox;
+        $hasTask = $c && $this->em->getRepository(Task::class)->count(['conversation' => $c]) > 0;
+        $body = (string) $a->extractedText;
+        if ('' !== $body && '[' === ($body[0] ?? '')) {
+            $body = '';
+        }
+        $type = mb_strtolower((string) $a->contentType);
+        $preview = str_contains($type, 'pdf') || str_starts_with($type, 'image/')
+            || str_contains($type, 'word') || str_contains($type, 'sheet') || str_contains($type, 'excel')
+            || str_contains($type, 'presentation') || str_contains($type, 'opendocument')
+            || (bool) preg_match('/\.(pdf|docx?|xlsx?|pptx?|odt|ods|odp|png|jpe?g|gif|webp)$/i', $a->filename);
+
+        return [
+            'id' => $a->id,
+            'name' => $a->filename,
+            'body' => mb_substr(trim($body), 0, 30000),
+            'conversationId' => $c?->id,
+            'customerName' => $c?->customerName ?: $c?->customerEmail,
+            'date' => $a->email?->occurredAt?->format('Y-m-d') ?? $a->createdAt->format('Y-m-d'),
+            'preview' => $preview,
+            'pruned' => null !== $a->prunedAt,
             'mailboxScope' => $mb?->scope ?? 'none',
             'ownerId' => $mb?->owner?->getId() ?? 0,
             'hasTask' => $hasTask,

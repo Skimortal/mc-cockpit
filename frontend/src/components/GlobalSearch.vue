@@ -68,8 +68,10 @@ function openItem(f: { kind: string; item: any }) {
 async function openDoc(d: any) {
   open.value = false
   q.value = ''
+  if (d.pruned) return
+  const base = d.kind === 'attachment' ? 'attachments' : 'documents'
   const path = d.preview ? 'preview' : 'download'
-  const r = await api.get(`/api/documents/${d.id}/${path}`, { responseType: 'blob' })
+  const r = await api.get(`/api/${base}/${d.id}/${path}`, { responseType: 'blob' })
   const url = URL.createObjectURL(r.data as Blob)
   if (d.preview) {
     window.open(url, '_blank')
@@ -159,7 +161,7 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKey))
         </div>
         <div v-if="res.documents.length" class="py-1 border-t border-[#f0e7e3]">
           <div class="px-3 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-neutral-400">Dokumente</div>
-          <button v-for="d in res.documents" :key="'d' + d.id" @mousedown.prevent="openItem({ kind: 'document', item: d })"
+          <button v-for="d in res.documents" :key="'d' + d.kind + d.id" @mousedown.prevent="openItem({ kind: 'document', item: d })"
             class="w-full text-left px-3 py-1.5 flex items-center gap-2" :class="isActive('document', d.id) ? 'bg-beige' : 'hover:bg-beige-soft'">
             <Icon name="paperclip" class="w-4 h-4 text-navy shrink-0" />
             <span class="text-[13px] truncate" v-html="hlHtml(d.nameHl || d.name)"></span>
