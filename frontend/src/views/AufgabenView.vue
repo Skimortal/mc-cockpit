@@ -82,10 +82,15 @@ const visibleConvs = computed(() => {
 function boardColumns() {
   const active = tasks.value.filter((t) => t.status !== 'done' || showDone.value)
   if (group.value === 'person') {
-    return [
-      { name: 'Unzugewiesen', alarm: true, type: 'person', val: '', items: active.filter((t) => !t.assignee) },
-      ...team.value.map((p) => ({ name: p.name, alarm: false, type: 'person', val: String(p.id), items: active.filter((t) => t.assignee?.id === p.id) })),
-    ]
+    const meId = auth.me?.id ?? null
+    const cols = []
+    if (meId) {
+      cols.push({ name: 'Meine Aufgaben', alarm: false, mine: true, type: 'person', val: String(meId), items: active.filter((t) => t.assignee?.id === meId) })
+    }
+    cols.push({ name: 'Unzugewiesen', alarm: true, type: 'person', val: '', items: active.filter((t) => !t.assignee) })
+    // andere Teammitglieder (eigene Person nicht doppelt zeigen – steckt in „Meine Aufgaben")
+    cols.push(...team.value.filter((p) => p.id !== meId).map((p) => ({ name: p.name, alarm: false, type: 'person', val: String(p.id), items: active.filter((t) => t.assignee?.id === p.id) })))
+    return cols
   }
   return STATUS_KEYS.map((s) => ({ name: STATUS[s], alarm: false, type: 'status', val: s, items: active.filter((t) => t.status === s) }))
 }
@@ -463,11 +468,12 @@ onBeforeUnmount(() => clearInterval(pollTimer))
         <div class="flex-1 overflow-x-auto px-5 pb-4">
           <div class="flex gap-4 h-full">
             <div v-for="col in boardColumns()" :key="col.name" class="dropcol w-56 shrink-0 rounded-xl transition"
+              :class="col.name === 'Meine Aufgaben' ? 'bg-coral/5 ring-1 ring-coral/20 p-1.5' : ''"
               @dragover.prevent="($event.currentTarget as HTMLElement).classList.add('over')"
               @dragleave="($event.currentTarget as HTMLElement).classList.remove('over')"
               @drop="($event.currentTarget as HTMLElement).classList.remove('over'); onDrop(col)">
               <div class="flex items-center justify-between mb-2 px-1">
-                <span class="text-[12px] font-semibold" :class="col.alarm && col.items.length ? 'text-coral' : 'text-navy'">{{ col.alarm ? '⚠ ' : '' }}{{ col.name }}</span>
+                <span class="text-[12px] font-semibold" :class="col.name === 'Meine Aufgaben' ? 'text-coral' : (col.alarm && col.items.length ? 'text-coral' : 'text-navy')">{{ col.name === 'Meine Aufgaben' ? '📌 ' : (col.alarm ? '⚠ ' : '') }}{{ col.name }}</span>
                 <span class="text-[10px] px-1.5 rounded-full bg-coral/15 text-coral">{{ col.items.length }}</span>
               </div>
               <div class="space-y-2 min-h-[64px]">
