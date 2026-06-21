@@ -7,6 +7,7 @@ use App\Entity\Notification;
 use App\Entity\Task;
 use App\Entity\TaskComment;
 use App\Entity\User;
+use App\Mail\Mailer;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -17,8 +18,12 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
 /** Maßgeschneiderte Endpunkte fürs Aufgaben-Board (schlanke, fertige JSON-Payloads). */
 class BoardController extends AbstractController
 {
-    public function __construct(private readonly EntityManagerInterface $em)
-    {
+    private const BASE_URL = 'https://crm.most-connect.com';
+
+    public function __construct(
+        private readonly EntityManagerInterface $em,
+        private readonly Mailer $mailer,
+    ) {
     }
 
     #[Route('/api/me', methods: ['GET'])]
@@ -51,6 +56,7 @@ class BoardController extends AbstractController
     public function assign(Task $task, Request $request, #[CurrentUser] ?User $user): JsonResponse
     {
         $userId = json_decode($request->getContent(), true)['userId'] ?? null;
+        $previousId = $task->assignee?->getId();
         $task->assignee = $userId ? $this->em->getRepository(User::class)->find($userId) : null;
         if ($task->assignee) {
             $by = $user ? ($user->getFirstName() ?: $user->getEmail()) : 'Jemand';
@@ -58,7 +64,50 @@ class BoardController extends AbstractController
         }
         $this->em->flush();
 
-        return $this->json($this->taskArr($task));
+        // Bei NEUER Zuweisung (anderer Empfänger) automatisch eine E-Mail schicken – best effort.
+        $emailed = false;
+        if ($task->assignee && $task->assignee->getId() !== $previousId && $task->assignee->getEmail()) {
+            $emailed = $this->emailAssignee($task, $user);
+        }
+
+        $out = $this->taskArr($task);
+        $out['emailed'] = $emailed;
+
+        return $this->json($out);
+    }
+
+    /** Manuell: den aktuell Zuständigen (erneut) per E-Mail benachrichtigen. */
+    #[Route('/api/tasks/{id}/notify-assignee', methods: ['POST'])]
+    public function notifyAssignee(Task $task, #[CurrentUser] ?User $user): JsonResponse
+    {
+        if (!$task->assignee || !$task->assignee->getEmail()) {
+            return $this->json(['error' => 'Aufgabe ist niemandem mit E-Mail-Adresse zugewiesen.'], 422);
+        }
+        if (!$this->emailAssignee($task, $user)) {
+            return $this->json(['error' => 'E-Mail konnte nicht versendet werden (SMTP-Postfach/Passwort prüfen).'], 502);
+        }
+
+        return $this->json(['ok' => true, 'to' => $task->assignee->getEmail()]);
+    }
+
+    private function emailAssignee(Task $task, ?User $actor): bool
+    {
+        $assignee = $task->assignee;
+        if (!$assignee || !$assignee->getEmail()) {
+            return false;
+        }
+        $fileCount = $this->em->getRepository(\App\Entity\TaskFile::class)->count(['task' => $task]);
+        $convId = $task->conversation?->id;
+        $url = self::BASE_URL.'/aufgaben'.($convId ? '?conv='.$convId : '');
+        $toName = trim($assignee->getFirstName().' '.$assignee->getLastName()) ?: $assignee->getEmail();
+        $actorName = $actor ? (trim($actor->getFirstName().' '.$actor->getLastName()) ?: $actor->getEmail()) : null;
+        try {
+            $this->mailer->sendAssignmentNotice($task, $assignee->getEmail(), $toName, $actorName, $url, $fileCount);
+
+            return true;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     #[Route('/api/tasks/{id}/due', methods: ['POST'])]

@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Entity\Email;
+use App\Entity\Mailbox;
 use App\Entity\Task;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Mailer\Mailer as SymfonyMailer;
@@ -79,6 +80,72 @@ final class Mailer
         $this->em->flush();
 
         return $email;
+    }
+
+    /**
+     * Interne Benachrichtigung an den zuständigen Kollegen, dass ihm eine Aufgabe
+     * zugewiesen wurde (mit Link). Versand über ein Postfach mit SMTP-Passwort.
+     */
+    public function sendAssignmentNotice(Task $task, string $toEmail, string $toName, ?string $actorName, string $taskUrl, int $fileCount): void
+    {
+        $mailbox = $this->pickSmtpMailbox($task->conversation?->mailbox);
+        if (!$mailbox) {
+            throw new \RuntimeException('Kein Postfach mit SMTP-Passwort für die Benachrichtigung verfügbar.');
+        }
+
+        $by = $actorName ? $actorName.' hat dir' : 'Dir wurde';
+        $lines = [
+            'Hallo '.($toName ?: '').',',
+            '',
+            $by.' eine Aufgabe zugewiesen:',
+            '',
+            '    '.$task->title,
+        ];
+        if ($task->aiSummary) {
+            $lines[] = '';
+            $lines[] = $task->aiSummary;
+        }
+        if ($fileCount > 0) {
+            $lines[] = '';
+            $lines[] = sprintf('📎 An der Aufgabe %s %d Datei(en) zum Download.', 1 === $fileCount ? 'hängt' : 'hängen', $fileCount);
+        }
+        $lines[] = '';
+        $lines[] = 'Direkt öffnen: '.$taskUrl;
+        $lines[] = '';
+        $lines[] = '— MOST Connect Cockpit';
+
+        $implicitTls = 'ssl' === $mailbox->smtpEncryption;
+        $transport = new EsmtpTransport($mailbox->smtpHost, $mailbox->smtpPort, $implicitTls);
+        $transport->setUsername($mailbox->username);
+        $transport->setPassword($mailbox->password);
+        $mailer = new SymfonyMailer($transport);
+
+        $mime = (new MimeEmail())
+            ->from($mailbox->email)
+            ->to($toEmail)
+            ->subject('Neue Aufgabe für dich: '.$task->title)
+            ->text(implode("\n", $lines));
+
+        $mailer->send($mime);
+    }
+
+    private function pickSmtpMailbox(?Mailbox $preferred): ?Mailbox
+    {
+        if ($preferred && '' !== $preferred->password) {
+            return $preferred;
+        }
+        foreach ($this->em->getRepository(Mailbox::class)->findBy(['scope' => 'global']) as $m) {
+            if ('' !== $m->password) {
+                return $m;
+            }
+        }
+        foreach ($this->em->getRepository(Mailbox::class)->findAll() as $m) {
+            if ('' !== $m->password) {
+                return $m;
+            }
+        }
+
+        return null;
     }
 
     private function replySubject(?string $subject): string

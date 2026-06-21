@@ -193,7 +193,7 @@ async function manualFetch() {
 const lastAtt = ref<number | null>(null)
 async function selectConv(id: number) {
   selConvId.value = id
-  replyText.value = ''; replyMsg.value = ''; commentText.value = ''; explanation.value = ''
+  replyText.value = ''; replyMsg.value = ''; commentText.value = ''; explanation.value = ''; notifyMsg.value = ''
   const { data } = await api.get(`/api/conversations/${id}`)
   detail.value = data
   // Postfach der Konversation aktiv schalten, damit sie links erscheint/markiert ist.
@@ -287,9 +287,23 @@ async function explainConv() {
     explanation.value = '⚠️ KI-Erklärung fehlgeschlagen.'
   } finally { explaining.value = false }
 }
+const notifyMsg = ref('')
 async function assign(task: Task, userId: number | '') {
-  await api.post(`/api/tasks/${task.id}/assign`, { userId: userId === '' ? null : userId })
+  notifyMsg.value = ''
+  const { data } = await api.post(`/api/tasks/${task.id}/assign`, { userId: userId === '' ? null : userId })
+  if (data?.emailed) notifyMsg.value = '✓ Zugewiesen & per E-Mail benachrichtigt'
   await Promise.all([loadBoard(), loadInbox()])
+}
+const notifying = ref(false)
+async function notifyAssignee(task: Task) {
+  notifying.value = true
+  notifyMsg.value = ''
+  try {
+    const { data } = await api.post(`/api/tasks/${task.id}/notify-assignee`)
+    notifyMsg.value = '✓ E-Mail gesendet an ' + (data.to || 'Zuständigen')
+  } catch (e: any) {
+    notifyMsg.value = '⚠️ ' + (e?.response?.data?.error || 'E-Mail fehlgeschlagen')
+  } finally { notifying.value = false }
 }
 async function setStatus(task: Task, status: string) {
   await api.post(`/api/tasks/${task.id}/status`, { status })
@@ -478,7 +492,9 @@ onBeforeUnmount(() => clearInterval(pollTimer))
                   <option value="">— Unzugewiesen —</option>
                   <option v-for="p in team" :key="p.id" :value="p.id">{{ p.name }}</option>
                 </select>
+                <button v-if="selTask.assignee" @click="notifyAssignee(selTask)" :disabled="notifying" title="Zuständigen per E-Mail benachrichtigen" class="ml-auto text-[11px] px-2 py-1 rounded-lg bg-navy/10 text-navy hover:bg-navy/20 disabled:opacity-50 whitespace-nowrap">{{ notifying ? '…' : '📧 Benachrichtigen' }}</button>
               </div>
+              <div v-if="notifyMsg" class="mt-1 text-[11px]" :class="notifyMsg.startsWith('⚠️') ? 'text-red-600' : 'text-green-700'">{{ notifyMsg }}</div>
               <div class="mt-2 flex items-center gap-2 text-[11px]">
                 <span class="text-neutral-500">Kunde:</span>
                 <select :value="selTask.companyId ?? ''" @change="setCompany(selTask, ($event.target as HTMLSelectElement).value === '' ? '' : Number(($event.target as HTMLSelectElement).value))" class="border border-[#e0d2cd] rounded-lg px-2 py-1 text-[11px] bg-white">
