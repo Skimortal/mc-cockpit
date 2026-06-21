@@ -70,18 +70,22 @@ async function openDoc(d: any) {
   q.value = ''
   if (d.pruned) return
   const base = d.kind === 'attachment' ? 'attachments' : 'documents'
-  const path = d.preview ? 'preview' : 'download'
-  const r = await api.get(`/api/${base}/${d.id}/${path}`, { responseType: 'blob' })
-  const url = URL.createObjectURL(r.data as Blob)
-  if (d.preview) {
-    window.open(url, '_blank')
-    setTimeout(() => URL.revokeObjectURL(url), 60000)
-  } else {
-    const link = document.createElement('a')
-    link.href = url
-    link.download = d.name
-    link.click()
-    URL.revokeObjectURL(url)
+  const win = d.preview ? window.open('', '_blank') : null
+  try {
+    const r = await api.get(`/api/${base}/${d.id}/${d.preview ? 'preview' : 'download'}`, { responseType: 'blob' })
+    const url = URL.createObjectURL(r.data as Blob)
+    if (d.preview && win) {
+      win.location.href = url
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } else {
+      const link = document.createElement('a')
+      link.href = url
+      link.download = d.name
+      link.click()
+      URL.revokeObjectURL(url)
+    }
+  } catch {
+    if (win) win.close()
   }
 }
 function move(d: number) {

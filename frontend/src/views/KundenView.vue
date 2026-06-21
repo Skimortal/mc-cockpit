@@ -135,18 +135,22 @@ function fmtSize(n: number): string {
 }
 async function openDoc(d: Doc) {
   if (!d.hasFile) return
-  const path = d.preview ? 'preview' : 'download'
-  const res = await api.get(`/api/documents/${d.id}/${path}`, { responseType: 'blob' })
-  const url = URL.createObjectURL(res.data as Blob)
-  if (d.preview) {
-    window.open(url, '_blank')
-    setTimeout(() => URL.revokeObjectURL(url), 60000)
-  } else {
-    const link = document.createElement('a')
-    link.href = url
-    link.download = d.name
-    link.click()
-    URL.revokeObjectURL(url)
+  const win = d.preview ? window.open('', '_blank') : null
+  try {
+    const res = await api.get(`/api/documents/${d.id}/${d.preview ? 'preview' : 'download'}`, { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data as Blob)
+    if (d.preview && win) {
+      win.location.href = url
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } else {
+      const link = document.createElement('a')
+      link.href = url
+      link.download = d.name
+      link.click()
+      URL.revokeObjectURL(url)
+    }
+  } catch {
+    if (win) win.close()
   }
 }
 async function addCompany() {
