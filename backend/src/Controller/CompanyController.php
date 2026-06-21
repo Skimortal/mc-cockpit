@@ -72,6 +72,7 @@ class CompanyController extends AbstractController
         $c->subtitle = $d['subtitle'] ?? null;
         $this->em->persist($c);
         $this->em->flush();
+        $this->search->indexCompany($c);
 
         return $this->json($this->detail($c), 201);
     }
@@ -92,6 +93,7 @@ class CompanyController extends AbstractController
             $c->customFields = array_values($d['customFields']);
         }
         $this->em->flush();
+        $this->search->indexCompany($c); // damit Name/Tags/Felder sofort durchsuchbar bleiben
 
         return $this->json($this->detail($c));
     }
