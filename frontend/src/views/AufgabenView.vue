@@ -368,16 +368,16 @@ const replyCc = ref('')
 const replySubject = ref('')
 const replySignature = ref('')
 const replySignatures = ref<{ id: number; name: string; html: string }[]>([])
-const replySigChoice = ref<number | 'custom' | 'none'>('none')
+const activeSigId = ref<number | null>(null)
+const editSig = ref(false)
 const replyFrom = ref('')
 const replyTab = ref<'schreiben' | 'vorschau'>('schreiben')
 const showCc = ref(false)
-function applySigChoice() {
-  if (replySigChoice.value === 'none') replySignature.value = ''
-  else if (replySigChoice.value !== 'custom') {
-    const s = replySignatures.value.find((x) => x.id === replySigChoice.value)
-    replySignature.value = s?.html || ''
-  }
+function pickSig(s: { id: number; html: string }) {
+  activeSigId.value = s.id; replySignature.value = s.html; editSig.value = false
+}
+function pickNoSig() {
+  activeSigId.value = null; replySignature.value = ''; editSig.value = false
 }
 const previewHtml = computed(() => {
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -395,7 +395,8 @@ async function openReply() {
     replySubject.value = data.subject || ''
     replySignatures.value = data.signatures || []
     replySignature.value = data.signature || ''
-    replySigChoice.value = data.defaultSignatureId ?? (data.signature ? 'custom' : 'none')
+    activeSigId.value = data.defaultSignatureId ?? null
+    editSig.value = false
     replyFrom.value = data.fromName ? `${data.fromName} <${data.fromEmail}>` : (data.fromEmail || '')
     if (replyCc.value) showCc.value = true
   } catch {
@@ -771,17 +772,31 @@ onBeforeUnmount(() => clearInterval(pollTimer))
         <!-- Inhalt -->
         <div class="flex-1 min-h-0 overflow-y-auto px-4 py-3">
           <template v-if="replyTab === 'schreiben'">
-            <textarea v-model="replyText" rows="10" placeholder="Antwort schreiben oder KI-Entwurf holen…" class="w-full border border-[#e0d2cd] rounded-lg px-3 py-2 text-[13px] bg-white leading-relaxed"></textarea>
-            <div class="mt-2 flex items-center gap-2 flex-wrap">
-              <span class="text-[11px] text-neutral-500">Signatur:</span>
-              <select v-model="replySigChoice" @change="applySigChoice" class="border border-[#e0d2cd] rounded-lg px-2 py-1 text-[12px] bg-white">
-                <option v-for="s in replySignatures" :key="s.id" :value="s.id">{{ s.name }}</option>
-                <option value="custom">Eigene…</option>
-                <option value="none">Keine</option>
-              </select>
-              <span class="text-[10px] text-neutral-400">in Vorschau sichtbar</span>
+            <textarea v-model="replyText" rows="8" placeholder="Antwort schreiben oder KI-Entwurf holen…" class="w-full border border-[#e0d2cd] px-3 py-2 text-[13px] bg-white leading-relaxed" :class="replySignature ? 'rounded-t-lg border-b-0' : 'rounded-lg'"></textarea>
+            <!-- Signatur inline (ausgegraut), pro Nachricht anpassbar -->
+            <div v-if="replySignature" class="border border-[#e0d2cd] rounded-b-lg bg-white px-3 py-2">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-[10px] uppercase tracking-wide text-neutral-400">Signatur (in dieser Nachricht)</span>
+                <button @click="editSig = !editSig" class="text-[11px] text-coral font-medium">{{ editSig ? '✓ fertig' : '✏️ anpassen' }}</button>
+              </div>
+              <div v-if="!editSig" class="text-[12px] text-neutral-400 leading-snug" v-html="replySignature"></div>
+              <textarea v-else v-model="replySignature" rows="6" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[12px] font-mono"></textarea>
             </div>
-            <textarea v-if="replySigChoice === 'custom'" v-model="replySignature" rows="4" placeholder="HTML-Signatur…" class="w-full border border-[#e0d2cd] rounded-lg px-3 py-2 text-[12px] bg-white font-mono mt-1"></textarea>
+
+            <!-- Signatur wählen: Karten mit voller Vorschau -->
+            <div class="mt-3">
+              <div class="text-[10px] uppercase tracking-wide text-neutral-400 mb-1">Signatur wählen</div>
+              <div class="flex gap-2 flex-wrap">
+                <button v-for="s in replySignatures" :key="s.id" @click="pickSig(s)"
+                  class="text-left border rounded-lg p-2 w-[210px] transition hover:border-coral"
+                  :class="activeSigId === s.id ? 'border-coral ring-1 ring-coral/30 bg-coral/5' : 'border-[#e6dad6] bg-white'">
+                  <div class="text-[11px] font-semibold text-navy mb-1">{{ s.name }}</div>
+                  <div class="text-[10px] text-neutral-400 leading-snug max-h-28 overflow-hidden" v-html="s.html"></div>
+                </button>
+                <button @click="pickNoSig" class="border rounded-lg p-2 w-[110px] text-[11px] transition hover:border-coral"
+                  :class="!replySignature ? 'border-coral ring-1 ring-coral/30 bg-coral/5 text-coral' : 'border-[#e6dad6] bg-white text-neutral-500'">Keine Signatur</button>
+              </div>
+            </div>
           </template>
           <div v-else class="border border-[#e6dad6] rounded-lg p-4 bg-white" v-html="previewHtml"></div>
         </div>
