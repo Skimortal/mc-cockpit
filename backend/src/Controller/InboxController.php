@@ -197,25 +197,28 @@ class InboxController extends AbstractController
             return $this->json(['ok' => true, 'taskId' => $existing->id, 'existing' => true]);
         }
 
+        // Quelle: bevorzugt die letzte eingehende Mail (für die KI-Triage). Gibt es keine
+        // (z. B. selbst gesendeter Thread ohne Antwort), nehmen wir die letzte Mail überhaupt.
         $lastIn = null;
         foreach ($c->emails as $e) {
             if ('in' === $e->direction) {
                 $lastIn = $e;
             }
         }
-        if (!$lastIn) {
-            return $this->json(['error' => 'Keine eingehende Mail.'], 422);
+        $source = $lastIn ?? ($c->emails->last() ?: null);
+        if (!$source) {
+            return $this->json(['error' => 'Keine Mail in der Konversation.'], 422);
         }
 
-        // simple = ohne KI-Triage (z. B. nur um eine Datei anzuhängen)
-        $simple = (bool) (json_decode($request->getContent(), true)['simple'] ?? false);
-        $task = $simple ? null : $this->triage->triage($lastIn);
+        // simple = ohne KI-Triage (Datei anhängen ODER kein eingehendes Mail, das man triagieren könnte)
+        $simple = (bool) (json_decode($request->getContent(), true)['simple'] ?? false) || null === $lastIn;
+        $task = $simple ? null : $this->triage->triage($source);
         if (!$task) {
             $task = new Task();
             $task->title = $c->subject ?: '(ohne Titel)';
             $task->conversation = $c;
-            $task->sourceEmail = $lastIn;
-            $task->aiSummary = mb_substr(trim((string) ($lastIn->bodyText ?: strip_tags((string) $lastIn->bodyHtml))), 0, 280);
+            $task->sourceEmail = $source;
+            $task->aiSummary = mb_substr(trim((string) ($source->bodyText ?: strip_tags((string) $source->bodyHtml))), 0, 280);
             $this->em->persist($task);
             $this->em->flush();
         }

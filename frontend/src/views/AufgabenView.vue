@@ -240,6 +240,8 @@ async function convertToTask() {
   try {
     await api.post(`/api/conversations/${selConvId.value}/to-task`)
     await Promise.all([loadBoard(), loadInbox()])
+  } catch (e: any) {
+    alert(e?.response?.data?.error || 'Umwandeln in Aufgabe fehlgeschlagen.')
   } finally { converting.value = false }
 }
 // --- Datei-Anhänge an der Aufgabe ---
