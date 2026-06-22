@@ -62,4 +62,8 @@ class Mailbox
     /** Ganze Mail nach so vielen Monaten löschen (Original bleibt im mbox-Archiv). 0 = nie. */
     #[ORM\Column(options: ['default' => 0])]
     public int $mailRetentionMonths = 0;
+
+    /** HTML-Signatur, die unter ausgehende Antworten gehängt wird (leer = keine). */
+    #[ORM\Column(type: 'text', nullable: true)]
+    public ?string $signature = null;
 }

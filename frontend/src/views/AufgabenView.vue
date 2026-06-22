@@ -361,19 +361,55 @@ async function addComment(task: Task) {
   commentText.value = ''
   await loadBoard()
 }
+// --- Antwort-Modal ---
+const replyOpen = ref(false)
+const replyTo = ref('')
+const replyCc = ref('')
+const replySubject = ref('')
+const replySignature = ref('')
+const replyFrom = ref('')
+const replyTab = ref<'schreiben' | 'vorschau'>('schreiben')
+const showSig = ref(false)
+const showCc = ref(false)
+const previewHtml = computed(() => {
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  let h = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;line-height:1.5">${esc(replyText.value).replace(/\n/g, '<br>')}</div>`
+  if (replySignature.value.trim()) h += '<br>' + replySignature.value
+  return h
+})
+async function openReply() {
+  if (!selTask.value) return
+  replyMsg.value = ''; replyText.value = ''; replyTab.value = 'schreiben'; showCc.value = false; showSig.value = false
+  try {
+    const { data } = await api.get(`/api/tasks/${selTask.value.id}/reply-context`)
+    replyTo.value = data.to || ''
+    replyCc.value = data.cc || ''
+    replySubject.value = data.subject || ''
+    replySignature.value = data.signature || ''
+    replyFrom.value = data.fromName ? `${data.fromName} <${data.fromEmail}>` : (data.fromEmail || '')
+    if (replyCc.value) showCc.value = true
+  } catch {
+    replyMsg.value = 'Konnte Antwort-Daten nicht laden.'
+  }
+  replyOpen.value = true
+}
 async function draftReply() {
   if (!selTask.value) return
   replyBusy.value = true; replyMsg.value = ''
   try {
     replyText.value = (await api.post(`/api/tasks/${selTask.value.id}/draft-reply`)).data.draft
+    replyTab.value = 'schreiben'
   } catch { replyMsg.value = 'KI-Entwurf fehlgeschlagen.' } finally { replyBusy.value = false }
 }
 async function sendReply() {
-  if (!selTask.value || !replyText.value.trim()) return
+  if (!selTask.value || !replyText.value.trim() || !replyTo.value.trim()) return
   replyBusy.value = true; replyMsg.value = ''
   try {
-    const { data } = await api.post(`/api/tasks/${selTask.value.id}/reply`, { body: replyText.value })
-    replyMsg.value = `Gesendet an ${data.to}.`
+    const { data } = await api.post(`/api/tasks/${selTask.value.id}/reply`, {
+      body: replyText.value, to: replyTo.value, cc: replyCc.value, subject: replySubject.value, signature: replySignature.value,
+    })
+    replyOpen.value = false
+    notifyMsg.value = `✓ Antwort gesendet an ${data.to}`
     replyText.value = ''
     if (selConvId.value) await selectConv(selConvId.value)
     await loadBoard()
@@ -662,15 +698,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
 
           <!-- Antwort -->
           <div class="px-4 py-3 border-t border-[#e6dad6] bg-beige-soft">
-            <div class="flex items-center justify-between mb-1.5">
-              <span class="text-[12px] font-semibold text-navy">Antwort an {{ detail.customerName || detail.customerEmail }}</span>
-              <button @click="draftReply" :disabled="replyBusy || !selTask" class="text-[11px] px-2 py-1 rounded-lg bg-coral/15 text-coral disabled:opacity-40" :title="!selTask ? 'Erst in Aufgabe umwandeln' : ''">{{ replyBusy ? 'KI denkt…' : '✨ KI-Entwurf' }}</button>
-            </div>
-            <textarea v-model="replyText" rows="4" placeholder="Antwort schreiben oder KI-Entwurf holen…" class="w-full border border-[#e0d2cd] rounded-lg px-3 py-2 text-[12px] bg-white"></textarea>
-            <div class="mt-1.5 flex items-center justify-between">
-              <span class="text-[11px]" :class="replyMsg.startsWith('Gesendet') ? 'text-green-600' : 'text-neutral-500'">{{ replyMsg }}</span>
-              <button @click="sendReply" :disabled="replyBusy || !replyText.trim()" class="text-[12px] px-3 py-1.5 rounded-lg bg-coral text-white font-medium disabled:opacity-50">Senden</button>
-            </div>
+            <button @click="openReply" :disabled="!selTask" class="w-full py-2.5 rounded-xl bg-coral text-white text-sm font-medium hover:bg-coral-dark disabled:opacity-50" :title="!selTask ? 'Erst in Aufgabe umwandeln' : ''">✉️ Antworten</button>
           </div>
         </template>
       </div>
@@ -692,6 +720,59 @@ onBeforeUnmount(() => clearInterval(pollTimer))
           <img v-else-if="previewIsImage && previewUrl" :src="previewUrl" class="max-h-full max-w-full object-contain" />
           <iframe v-else-if="previewUrl" :src="previewUrl" class="w-full h-full border-0"></iframe>
           <div v-else class="text-neutral-400 text-sm px-6 text-center">Keine Vorschau verfügbar – bitte herunterladen.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Antwort verfassen -->
+    <div v-if="replyOpen" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 sm:p-8" @click.self="replyOpen = false">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl h-[88vh] flex flex-col overflow-hidden">
+        <div class="flex items-center gap-2 px-4 py-2.5 border-b border-[#e6dad6] shrink-0">
+          <Icon name="envelope" class="w-4 h-4 text-navy shrink-0" />
+          <span class="text-[13px] font-semibold text-ebony">Antwort verfassen</span>
+          <span class="text-[11px] text-neutral-400 truncate">· von {{ replyFrom }}</span>
+          <button @click="replyOpen = false" class="ml-auto text-neutral-400 hover:text-ebony text-2xl leading-none px-1">×</button>
+        </div>
+
+        <!-- Kopf: Empfänger / Betreff -->
+        <div class="px-4 pt-3 space-y-1.5 shrink-0">
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] text-neutral-500 w-12 shrink-0">An</span>
+            <input v-model="replyTo" class="flex-1 border border-[#e0d2cd] rounded-lg px-2 py-1 text-[12px]" placeholder="empfaenger@…" />
+            <button v-if="!showCc" @click="showCc = true" class="text-[11px] text-coral shrink-0">+ CC</button>
+          </div>
+          <div v-if="showCc" class="flex items-center gap-2">
+            <span class="text-[11px] text-neutral-500 w-12 shrink-0">CC</span>
+            <input v-model="replyCc" class="flex-1 border border-[#e0d2cd] rounded-lg px-2 py-1 text-[12px]" placeholder="cc1@…, cc2@…" />
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] text-neutral-500 w-12 shrink-0">Betreff</span>
+            <input v-model="replySubject" class="flex-1 border border-[#e0d2cd] rounded-lg px-2 py-1 text-[12px]" />
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="px-4 pt-3 flex items-center gap-1 shrink-0">
+          <button @click="replyTab = 'schreiben'" class="text-[12px] px-2.5 py-1 rounded-lg" :class="replyTab === 'schreiben' ? 'bg-navy text-white' : 'text-neutral-500 hover:bg-beige'">Schreiben</button>
+          <button @click="replyTab = 'vorschau'" class="text-[12px] px-2.5 py-1 rounded-lg" :class="replyTab === 'vorschau' ? 'bg-navy text-white' : 'text-neutral-500 hover:bg-beige'">Vorschau</button>
+          <button @click="draftReply" :disabled="replyBusy" class="ml-auto text-[11px] px-2 py-1 rounded-lg bg-coral/15 text-coral disabled:opacity-40">{{ replyBusy ? 'KI denkt…' : '✨ KI-Entwurf' }}</button>
+        </div>
+
+        <!-- Inhalt -->
+        <div class="flex-1 min-h-0 overflow-y-auto px-4 py-3">
+          <template v-if="replyTab === 'schreiben'">
+            <textarea v-model="replyText" rows="10" placeholder="Antwort schreiben oder KI-Entwurf holen…" class="w-full border border-[#e0d2cd] rounded-lg px-3 py-2 text-[13px] bg-white leading-relaxed"></textarea>
+            <button @click="showSig = !showSig" class="mt-2 text-[11px] text-neutral-500 hover:text-coral">{{ showSig ? '▾' : '▸' }} Signatur {{ replySignature ? '(aktiv)' : '(keine)' }} bearbeiten</button>
+            <textarea v-if="showSig" v-model="replySignature" rows="4" placeholder="HTML-Signatur…" class="w-full border border-[#e0d2cd] rounded-lg px-3 py-2 text-[12px] bg-white font-mono mt-1"></textarea>
+          </template>
+          <div v-else class="border border-[#e6dad6] rounded-lg p-4 bg-white" v-html="previewHtml"></div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-4 py-3 border-t border-[#e6dad6] flex items-center gap-2 shrink-0">
+          <span v-if="replyMsg" class="text-[11px] text-red-600">{{ replyMsg }}</span>
+          <button @click="replyOpen = false" class="ml-auto text-[12px] px-3 py-1.5 rounded-lg text-neutral-600 hover:bg-beige">Abbrechen</button>
+          <button @click="sendReply" :disabled="replyBusy || !replyText.trim() || !replyTo.trim()" class="text-[13px] px-4 py-1.5 rounded-lg bg-coral text-white font-medium disabled:opacity-50">{{ replyBusy ? 'Senden…' : '✉️ Senden' }}</button>
         </div>
       </div>
     </div>

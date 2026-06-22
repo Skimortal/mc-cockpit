@@ -63,6 +63,24 @@ final class ImapPoller
         $from = $message->getFrom()[0] ?? null;
         $to = $message->getTo()[0] ?? null;
 
+        // CC (+ weitere To-Empfänger außer dem ersten) für „Allen antworten" sammeln.
+        $cc = [];
+        try {
+            foreach ($message->getCc() ?: [] as $a) {
+                if (!empty($a->mail)) {
+                    $cc[] = $a->mail;
+                }
+            }
+            $tos = $message->getTo() ?: [];
+            foreach (\array_slice(\is_array($tos) ? $tos : iterator_to_array($tos), 1) as $a) {
+                if (!empty($a->mail)) {
+                    $cc[] = $a->mail;
+                }
+            }
+        } catch (\Throwable) {
+        }
+        $ccStr = $cc ? implode(', ', array_values(array_unique($cc))) : null;
+
         $date = null;
         try {
             $d = $message->getDate()?->first();
@@ -120,6 +138,7 @@ final class ImapPoller
             fromAddress: $from?->mail,
             fromName: self::mimeDecode($this->str($from?->personal)) ?: null,
             toAddress: $to?->mail,
+            ccAddress: $ccStr,
             subject: self::mimeDecode($this->str($message->getSubject())),
             bodyText: $message->getTextBody() ?: null,
             bodyHtml: $message->getHTMLBody() ?: null,

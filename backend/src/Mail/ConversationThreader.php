@@ -41,6 +41,7 @@ final class ConversationThreader
         $email->direction = $this->isOwn($msg->fromAddress) ? 'out' : 'in';
         $email->fromAddress = $msg->fromAddress;
         $email->toAddress = $msg->toAddress;
+        $email->ccAddress = $msg->ccAddress;
         $email->subject = $msg->subject;
         $email->bodyText = $msg->bodyText;
         $email->bodyHtml = $msg->bodyHtml;

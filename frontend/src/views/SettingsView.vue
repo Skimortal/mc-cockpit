@@ -15,7 +15,7 @@ const pwForm = reactive({ newPw: '', repeat: '' })
 const showPw = ref(false)
 const pwMsg = ref('')
 
-interface MB { id: number; name: string; email: string; scope: string; owner: { id: number; name: string } | null; imapHost: string; imapPort: number; imapEncryption: string; smtpHost: string; smtpPort: number; smtpEncryption: string; username: string; active: boolean; hasPassword: boolean; attachmentRetentionMonths: number; mailRetentionMonths: number }
+interface MB { id: number; name: string; email: string; scope: string; owner: { id: number; name: string } | null; imapHost: string; imapPort: number; imapEncryption: string; smtpHost: string; smtpPort: number; smtpEncryption: string; username: string; active: boolean; hasPassword: boolean; attachmentRetentionMonths: number; mailRetentionMonths: number; signature: string }
 interface UserRow { id: number; email: string; firstName: string; lastName: string; name: string; isAdmin: boolean }
 
 const mailboxes = ref<MB[]>([])
@@ -27,7 +27,7 @@ const showForm = ref(false)
 const formId = ref<number | null>(null)
 const form = reactive<any>({})
 function blankForm(scope: string) {
-  return { scope, name: '', email: '', imapHost: 'mail.world4you.com', imapPort: 993, imapEncryption: 'ssl', smtpHost: 'smtp.world4you.com', smtpPort: 587, smtpEncryption: 'tls', username: '', password: '', active: true, attachmentRetentionMonths: 12, mailRetentionMonths: 0 }
+  return { scope, name: '', email: '', imapHost: 'mail.world4you.com', imapPort: 993, imapEncryption: 'ssl', smtpHost: 'smtp.world4you.com', smtpPort: 587, smtpEncryption: 'tls', username: '', password: '', active: true, attachmentRetentionMonths: 12, mailRetentionMonths: 0, signature: '' }
 }
 function openNew(scope: string) { formId.value = null; Object.assign(form, blankForm(scope)); showForm.value = true }
 function openEdit(m: MB) { formId.value = m.id; Object.assign(form, { ...m, password: '' }); showForm.value = true }
@@ -275,6 +275,15 @@ onMounted(async () => {
           <label class="text-[11px] text-neutral-500">Anhänge entfernen nach (Monate, 0 = nie)<input v-model.number="form.attachmentRetentionMonths" type="number" min="0" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px] text-ebony" /></label>
           <label class="text-[11px] text-neutral-500">Ganze Mail löschen nach (Monate, 0 = nie)<input v-model.number="form.mailRetentionMonths" type="number" min="0" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px] text-ebony" /></label>
           <div class="col-span-2 text-[10px] text-neutral-400 leading-snug">Anhang-Dateien werden nach der Frist von der Platte entfernt (Text bleibt durchsuchbar, Original im Mail-Archiv). Mails/Anhänge mit offener Aufgabe bleiben immer erhalten.</div>
+
+          <div class="col-span-2 mt-1 pt-2 border-t border-[#efe4df] text-[11px] uppercase tracking-wide text-neutral-400">Signatur (HTML)</div>
+          <label class="col-span-2 text-[11px] text-neutral-500">Wird unter ausgehende Antworten gehängt
+            <textarea v-model="form.signature" rows="4" placeholder="&lt;p&gt;Mit freundlichen Grüßen&lt;br&gt;&lt;b&gt;MOST Connect KG&lt;/b&gt;&lt;br&gt;…&lt;/p&gt;" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[12px] text-ebony font-mono mt-0.5"></textarea>
+          </label>
+          <div v-if="form.signature" class="col-span-2 text-[11px]">
+            <div class="text-[10px] uppercase tracking-wide text-neutral-400 mb-1">Vorschau</div>
+            <div class="border border-[#e6dad6] rounded-lg p-2 bg-white" v-html="form.signature"></div>
+          </div>
         </div>
         <div class="mt-4 flex justify-end gap-2">
           <button @click="showForm = false" class="text-[13px] px-3 py-1.5 rounded-lg text-neutral-600 hover:bg-beige">Abbrechen</button>

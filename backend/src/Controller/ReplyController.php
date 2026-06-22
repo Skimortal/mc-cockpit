@@ -35,6 +35,49 @@ class ReplyController extends AbstractController
         return $this->json(['draft' => $draft]);
     }
 
+    /** Vorbelegung fürs Antwort-Fenster: Empfänger (allen antworten), Betreff, Signatur. */
+    #[Route('/api/tasks/{id}/reply-context', methods: ['GET'])]
+    public function replyContext(Task $task): JsonResponse
+    {
+        $conv = $task->conversation;
+        $mailbox = $conv?->mailbox;
+        $own = $mailbox ? mb_strtolower($mailbox->email) : '';
+
+        // letzte eingehende Nachricht als Basis für „Allen antworten"
+        $lastIn = null;
+        foreach ($conv?->emails ?? [] as $e) {
+            if ('in' === $e->direction) {
+                $lastIn = $e;
+            }
+        }
+        $src = $lastIn ?? $task->sourceEmail;
+
+        $to = $src?->fromAddress ? [$src->fromAddress] : ($conv?->customerEmail ? [$conv->customerEmail] : []);
+        $cc = [];
+        foreach (preg_split('/[,;]+/', (string) ($src?->ccAddress ?? '')) ?: [] as $a) {
+            $a = trim($a);
+            if ('' !== $a && str_contains($a, '@')) {
+                $cc[] = $a;
+            }
+        }
+        // eigene Adresse + bereits in To enthaltene rausfiltern
+        $norm = fn (array $xs) => array_values(array_unique(array_filter($xs, fn ($x) => mb_strtolower($x) !== $own)));
+        $to = $norm($to);
+        $cc = array_values(array_filter($norm($cc), fn ($x) => !\in_array(mb_strtolower($x), array_map('mb_strtolower', $to), true)));
+
+        $subject = $src?->subject ?: $conv?->subject;
+        $subject = preg_match('/^\s*(re|aw)\s*:/iu', (string) $subject) ? $subject : 'Re: '.$subject;
+
+        return $this->json([
+            'to' => implode(', ', $to),
+            'cc' => implode(', ', $cc),
+            'subject' => $subject,
+            'signature' => $mailbox?->signature ?? '',
+            'fromName' => $mailbox?->name ?? '',
+            'fromEmail' => $mailbox?->email ?? '',
+        ]);
+    }
+
     #[Route('/api/tasks/{id}/reply', methods: ['POST'])]
     public function reply(Task $task, Request $request): JsonResponse
     {
@@ -45,7 +88,14 @@ class ReplyController extends AbstractController
         }
 
         try {
-            $email = $this->mailer->sendReply($task, $body, $data['subject'] ?? null);
+            $email = $this->mailer->sendReply(
+                $task,
+                $body,
+                $data['subject'] ?? null,
+                isset($data['to']) ? (string) $data['to'] : null,
+                isset($data['cc']) ? (string) $data['cc'] : null,
+                isset($data['signature']) ? (string) $data['signature'] : null,
+            );
         } catch (\Throwable $e) {
             return $this->json(['error' => $e->getMessage()], 422);
         }

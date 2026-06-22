@@ -27,6 +27,10 @@ class Email
     #[ORM\Column(length: 500, nullable: true)]
     public ?string $toAddress = null;
 
+    /** CC-Empfänger (kommagetrennt), für „Allen antworten". */
+    #[ORM\Column(type: 'text', nullable: true)]
+    public ?string $ccAddress = null;
+
     #[ORM\Column(length: 500, nullable: true)]
     public ?string $subject = null;
 

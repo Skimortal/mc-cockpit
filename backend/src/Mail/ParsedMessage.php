@@ -12,6 +12,7 @@ final class ParsedMessage
         public readonly ?string $fromAddress,
         public readonly ?string $fromName,
         public readonly ?string $toAddress,
+        public readonly ?string $ccAddress,
         public readonly string $subject,
         public readonly ?string $bodyText,
         public readonly ?string $bodyHtml,

@@ -8,6 +8,7 @@ use App\Entity\Task;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Mailer\Mailer as SymfonyMailer;
 use Symfony\Component\Mailer\Transport\Smtp\EsmtpTransport;
+use Symfony\Component\Mime\Address;
 use Symfony\Component\Mime\Email as MimeEmail;
 
 /** Versendet (threaded) Antworten über das SMTP des jeweiligen Postfachs und speichert sie. */
@@ -17,7 +18,7 @@ final class Mailer
     {
     }
 
-    public function sendReply(Task $task, string $body, ?string $subjectOverride = null): Email
+    public function sendReply(Task $task, string $body, ?string $subjectOverride = null, ?string $to = null, ?string $cc = null, ?string $signatureHtml = null): Email
     {
         $conversation = $task->conversation;
         $source = $task->sourceEmail;
@@ -30,16 +31,30 @@ final class Mailer
             throw new \RuntimeException('Für das Postfach ist kein SMTP-Passwort hinterlegt.');
         }
 
-        $to = $source?->fromAddress ?: $conversation->customerEmail;
-        if (!$to) {
+        $own = mb_strtolower($mailbox->email);
+        $toList = $this->addrs($to ?? ($source?->fromAddress ?: $conversation->customerEmail));
+        $toList = array_values(array_filter($toList, fn ($a) => mb_strtolower($a) !== $own));
+        if (!$toList) {
             throw new \RuntimeException('Kein Empfänger ermittelbar.');
         }
+        $ccList = array_values(array_filter($this->addrs($cc), fn ($a) => mb_strtolower($a) !== $own && !\in_array(mb_strtolower($a), array_map('mb_strtolower', $toList), true)));
 
         $subject = $subjectOverride ?: $this->replySubject($source?->subject ?: $conversation->subject);
         $inReplyTo = $source?->messageId;
         $references = trim(($source?->refs ? $source->refs.' ' : '').($inReplyTo ?? ''));
 
-        // Transport aus der Postfach-Konfiguration aufbauen.
+        // Signatur: explizit übergeben, sonst die des Postfachs.
+        $sig = trim((string) ($signatureHtml ?? $mailbox->signature ?? ''));
+        $bodyHtml = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;line-height:1.5">'
+            .nl2br(htmlspecialchars($body, \ENT_QUOTES, 'UTF-8')).'</div>';
+        if ('' !== $sig) {
+            $bodyHtml .= '<br>'.$sig;
+        }
+        $textBody = $body;
+        if ('' !== $sig) {
+            $textBody .= "\n\n".trim(html_entity_decode(strip_tags(preg_replace('/<br\s*\/?>|<\/p>|<\/div>/i', "\n", $sig) ?? $sig), \ENT_QUOTES, 'UTF-8'));
+        }
+
         $implicitTls = 'ssl' === $mailbox->smtpEncryption; // 465 = implizit, 587 = STARTTLS (auto)
         $transport = new EsmtpTransport($mailbox->smtpHost, $mailbox->smtpPort, $implicitTls);
         $transport->setUsername($mailbox->username);
@@ -47,10 +62,14 @@ final class Mailer
         $mailer = new SymfonyMailer($transport);
 
         $mime = (new MimeEmail())
-            ->from($mailbox->email)
-            ->to($to)
+            ->from(new Address($mailbox->email, $mailbox->name ?: 'MOST Connect KG'))
+            ->to(...$toList)
             ->subject($subject)
-            ->text($body);
+            ->text($textBody)
+            ->html($bodyHtml);
+        if ($ccList) {
+            $mime->cc(...$ccList);
+        }
 
         $headers = $mime->getHeaders();
         if ($inReplyTo) {
@@ -66,9 +85,11 @@ final class Mailer
         $email->conversation = $conversation;
         $email->direction = 'out';
         $email->fromAddress = $mailbox->email;
-        $email->toAddress = $to;
+        $email->toAddress = implode(', ', $toList);
+        $email->ccAddress = $ccList ? implode(', ', $ccList) : null;
         $email->subject = $subject;
-        $email->bodyText = $body;
+        $email->bodyText = $textBody;
+        $email->bodyHtml = $bodyHtml;
         $email->messageId = $sent?->getMessageId() ? '<'.$sent->getMessageId().'>' : null;
         $email->inReplyTo = $inReplyTo;
         $email->refs = '' !== $references ? $references : null;
@@ -80,6 +101,24 @@ final class Mailer
         $this->em->flush();
 
         return $email;
+    }
+
+    /** Komma-/Semikolon-getrennte Adressliste -> bereinigtes Array. @return string[] */
+    private function addrs(?string $s): array
+    {
+        if (null === $s || '' === trim($s)) {
+            return [];
+        }
+        $parts = preg_split('/[,;]+/', $s) ?: [];
+        $out = [];
+        foreach ($parts as $p) {
+            $p = trim($p);
+            if ('' !== $p && str_contains($p, '@')) {
+                $out[$p] = true;
+            }
+        }
+
+        return array_keys($out);
     }
 
     /**
