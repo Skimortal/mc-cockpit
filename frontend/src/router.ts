@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import LoginView from './views/LoginView.vue'
 import AufgabenView from './views/AufgabenView.vue'
 import KundenView from './views/KundenView.vue'
+import AusschreibungenView from './views/AusschreibungenView.vue'
 import SettingsView from './views/SettingsView.vue'
 import SucheView from './views/SucheView.vue'
 
@@ -12,6 +13,7 @@ const router = createRouter({
     { path: '/', redirect: '/aufgaben' },
     { path: '/aufgaben', component: AufgabenView, meta: { auth: true } },
     { path: '/kunden', component: KundenView, meta: { auth: true } },
+    { path: '/ausschreibungen', component: AusschreibungenView, meta: { auth: true } },
     { path: '/suche', component: SucheView, meta: { auth: true } },
     { path: '/einstellungen', component: SettingsView, meta: { auth: true } },
   ],

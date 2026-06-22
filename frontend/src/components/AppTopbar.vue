@@ -35,6 +35,10 @@ function logout() {
         :class="route.path === '/kunden' ? 'bg-white/15 text-white' : 'text-white/65 hover:bg-white/10 hover:text-white'">
         <Icon name="building" class="w-4 h-4" /> Kunden
       </RouterLink>
+      <RouterLink to="/ausschreibungen" class="flex items-center gap-1.5 text-[13px] px-3 py-1.5 rounded-lg transition"
+        :class="route.path === '/ausschreibungen' ? 'bg-white/15 text-white' : 'text-white/65 hover:bg-white/10 hover:text-white'">
+        <Icon name="briefcase" class="w-4 h-4" /> Ausschreibungen
+      </RouterLink>
     </nav>
 
     <div class="flex-1 flex justify-center px-3">
