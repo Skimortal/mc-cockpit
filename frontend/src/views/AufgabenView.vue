@@ -403,6 +403,11 @@ const previewHtml = computed(() => {
   if (replySignature.value.trim()) h += '<br>' + replySignature.value
   return h
 })
+async function replyFromConversation() {
+  if (!selConvId.value) return
+  if (!selTask.value) await convertToTask() // legt automatisch eine Aufgabe an
+  if (selTask.value) await openReply()
+}
 async function openReply() {
   if (!selTask.value) return
   replyMsg.value = ''; replyText.value = ''; replyTab.value = 'schreiben'; showCc.value = false
@@ -728,7 +733,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
 
           <!-- Antwort -->
           <div class="px-4 py-3 border-t border-[#e6dad6] bg-beige-soft">
-            <button @click="openReply" :disabled="!selTask" class="w-full py-2.5 rounded-xl bg-coral text-white text-sm font-medium hover:bg-coral-dark disabled:opacity-50" :title="!selTask ? 'Erst in Aufgabe umwandeln' : ''">✉️ Antworten</button>
+            <button @click="replyFromConversation" :disabled="converting" class="w-full py-2.5 rounded-xl bg-coral text-white text-sm font-medium hover:bg-coral-dark disabled:opacity-50" :title="!selTask ? 'Erzeugt automatisch eine Aufgabe und öffnet die Antwort' : ''">✉️ Antworten</button>
           </div>
         </template>
       </div>

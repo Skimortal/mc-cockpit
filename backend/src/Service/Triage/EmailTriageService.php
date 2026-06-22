@@ -27,11 +27,16 @@ final class EmailTriageService
 
     public function triage(Email $email): ?Task
     {
-        $data = $this->llm->extract(
-            $this->systemPrompt(),
-            $this->userText($email),
-            $this->schema(),
-        );
+        try {
+            $data = $this->llm->extract(
+                $this->systemPrompt(),
+                $this->userText($email),
+                $this->schema(),
+            );
+        } catch (\Throwable) {
+            // z. B. Budget erreicht oder API-Fehler -> keine KI-Aufgabe (Aufrufer legt eine Basis-Aufgabe an).
+            return null;
+        }
 
         $email->triagedAt = new \DateTimeImmutable();
 

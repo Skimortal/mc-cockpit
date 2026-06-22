@@ -107,6 +107,9 @@ const signatures = ref<Sig[]>([])
 const sigForm = reactive<{ id: number | null; name: string; html: string }>({ id: null, name: '', html: '' })
 const showSigForm = ref(false)
 async function loadSignatures() { signatures.value = (await api.get('/api/signatures')).data }
+
+const usage = ref<{ monthSpentUsd: number; budgetUsd: number; percent: number; calls: number } | null>(null)
+async function loadUsage() { try { usage.value = (await api.get('/api/llm-usage')).data } catch { usage.value = null } }
 function newSig() { sigForm.id = null; sigForm.name = ''; sigForm.html = ''; showSigForm.value = true }
 function editSig(s: Sig) { sigForm.id = s.id; sigForm.name = s.name; sigForm.html = s.html; showSigForm.value = true }
 async function saveSig() {
@@ -129,6 +132,7 @@ onMounted(async () => {
   await loadMailboxes()
   await loadUsers()
   await loadSignatures()
+  await loadUsage()
 })
 </script>
 
@@ -190,6 +194,19 @@ onMounted(async () => {
                 <button @click="savePassword" :disabled="!pwForm.newPw || !pwForm.repeat" class="text-[13px] px-3 py-1.5 rounded-lg bg-coral text-white font-medium hover:bg-coral-dark disabled:opacity-50">Passwort ändern</button>
                 <span class="text-[12px]" :class="pwMsg === 'Passwort geändert.' ? 'text-green-600' : 'text-red-600'">{{ pwMsg }}</span>
               </div>
+            </div>
+
+            <!-- KI-Nutzung -->
+            <div v-if="usage" class="bg-white border border-[#e6dad6] rounded-xl p-4 max-w-md mt-4">
+              <div class="text-[13px] font-semibold text-navy mb-2">KI-Nutzung (dieser Monat)</div>
+              <div class="flex items-baseline gap-2">
+                <span class="text-[20px] font-head text-ebony">${{ usage.monthSpentUsd.toFixed(2) }}</span>
+                <span class="text-[12px] text-neutral-500">von ${{ usage.budgetUsd.toFixed(0) }} Budget · {{ usage.calls }} Aufrufe</span>
+              </div>
+              <div v-if="usage.budgetUsd > 0" class="mt-2 h-2 rounded-full bg-beige overflow-hidden">
+                <div class="h-full transition-all" :style="{ width: Math.min(100, usage.percent) + '%', background: usage.percent >= 90 ? '#eb5d4f' : '#3f9d6b' }"></div>
+              </div>
+              <p class="text-[10px] text-neutral-400 mt-1.5">Geschätzt anhand der Token-Preise. Bei Erreichen des Budgets pausieren KI-Funktionen automatisch (Limit: LLM_MONTHLY_BUDGET in der .env).</p>
             </div>
           </template>
 
