@@ -94,8 +94,9 @@ class MailboxController extends AbstractController
         if (isset($d['active'])) {
             $m->active = (bool) $d['active'];
         }
-        if (\array_key_exists('signature', $d)) {
-            $m->signature = '' !== trim((string) $d['signature']) ? (string) $d['signature'] : null;
+        if (\array_key_exists('defaultSignatureId', $d)) {
+            $sid = $d['defaultSignatureId'];
+            $m->defaultSignature = $sid ? $this->em->getRepository(\App\Entity\Signature::class)->find($sid) : null;
         }
         if (!empty($d['password'])) {
             $m->password = (string) $d['password']; // nur setzen, wenn übergeben
@@ -134,7 +135,7 @@ class MailboxController extends AbstractController
             'hasPassword' => '' !== $m->password,
             'attachmentRetentionMonths' => $m->attachmentRetentionMonths,
             'mailRetentionMonths' => $m->mailRetentionMonths,
-            'signature' => $m->signature ?? '',
+            'defaultSignatureId' => $m->defaultSignature?->id,
         ];
     }
 }

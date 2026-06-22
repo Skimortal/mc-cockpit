@@ -44,7 +44,7 @@ final class Mailer
         $references = trim(($source?->refs ? $source->refs.' ' : '').($inReplyTo ?? ''));
 
         // Signatur: explizit übergeben, sonst die des Postfachs.
-        $sig = trim((string) ($signatureHtml ?? $mailbox->signature ?? ''));
+        $sig = trim((string) ($signatureHtml ?? $mailbox->defaultSignature?->html ?? ''));
         $bodyHtml = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;line-height:1.5">'
             .nl2br(htmlspecialchars($body, \ENT_QUOTES, 'UTF-8')).'</div>';
         if ('' !== $sig) {

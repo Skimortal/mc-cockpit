@@ -63,7 +63,8 @@ class Mailbox
     #[ORM\Column(options: ['default' => 0])]
     public int $mailRetentionMonths = 0;
 
-    /** HTML-Signatur, die unter ausgehende Antworten gehängt wird (leer = keine). */
-    #[ORM\Column(type: 'text', nullable: true)]
-    public ?string $signature = null;
+    /** Standard-Signatur dieses Postfachs (pro Nachricht überschreibbar). */
+    #[ORM\ManyToOne(targetEntity: Signature::class)]
+    #[ORM\JoinColumn(nullable: true, onDelete: 'SET NULL')]
+    public ?Signature $defaultSignature = null;
 }

@@ -8,14 +8,15 @@ import { confirmDialog, promptDialog, alertDialog } from '../composables/dialog'
 
 const auth = useAuth()
 const isAdmin = computed(() => auth.me?.roles?.includes('ROLE_ADMIN') ?? false)
-const tab = ref<'profile' | 'mailboxes' | 'users'>('profile')
+const tab = ref<'profile' | 'mailboxes' | 'users' | 'signatures'>('profile')
 const profileForm = reactive({ firstName: '', lastName: '', email: '' })
 const profileMsg = ref('')
 const pwForm = reactive({ newPw: '', repeat: '' })
 const showPw = ref(false)
 const pwMsg = ref('')
 
-interface MB { id: number; name: string; email: string; scope: string; owner: { id: number; name: string } | null; imapHost: string; imapPort: number; imapEncryption: string; smtpHost: string; smtpPort: number; smtpEncryption: string; username: string; active: boolean; hasPassword: boolean; attachmentRetentionMonths: number; mailRetentionMonths: number; signature: string }
+interface MB { id: number; name: string; email: string; scope: string; owner: { id: number; name: string } | null; imapHost: string; imapPort: number; imapEncryption: string; smtpHost: string; smtpPort: number; smtpEncryption: string; username: string; active: boolean; hasPassword: boolean; attachmentRetentionMonths: number; mailRetentionMonths: number; defaultSignatureId: number | null }
+interface Sig { id: number; name: string; html: string }
 interface UserRow { id: number; email: string; firstName: string; lastName: string; name: string; isAdmin: boolean }
 
 const mailboxes = ref<MB[]>([])
@@ -27,7 +28,7 @@ const showForm = ref(false)
 const formId = ref<number | null>(null)
 const form = reactive<any>({})
 function blankForm(scope: string) {
-  return { scope, name: '', email: '', imapHost: 'mail.world4you.com', imapPort: 993, imapEncryption: 'ssl', smtpHost: 'smtp.world4you.com', smtpPort: 587, smtpEncryption: 'tls', username: '', password: '', active: true, attachmentRetentionMonths: 12, mailRetentionMonths: 0, signature: '' }
+  return { scope, name: '', email: '', imapHost: 'mail.world4you.com', imapPort: 993, imapEncryption: 'ssl', smtpHost: 'smtp.world4you.com', smtpPort: 587, smtpEncryption: 'tls', username: '', password: '', active: true, attachmentRetentionMonths: 12, mailRetentionMonths: 0, defaultSignatureId: null }
 }
 function openNew(scope: string) { formId.value = null; Object.assign(form, blankForm(scope)); showForm.value = true }
 function openEdit(m: MB) { formId.value = m.id; Object.assign(form, { ...m, password: '' }); showForm.value = true }
@@ -101,6 +102,25 @@ async function editUser(u: UserRow) {
   patchUser(u.id, r)
 }
 async function loadMailboxes() { mailboxes.value = (await api.get('/api/mailboxes/manage')).data }
+
+const signatures = ref<Sig[]>([])
+const sigForm = reactive<{ id: number | null; name: string; html: string }>({ id: null, name: '', html: '' })
+const showSigForm = ref(false)
+async function loadSignatures() { signatures.value = (await api.get('/api/signatures')).data }
+function newSig() { sigForm.id = null; sigForm.name = ''; sigForm.html = ''; showSigForm.value = true }
+function editSig(s: Sig) { sigForm.id = s.id; sigForm.name = s.name; sigForm.html = s.html; showSigForm.value = true }
+async function saveSig() {
+  if (!sigForm.name.trim()) return
+  if (sigForm.id) await api.patch(`/api/signatures/${sigForm.id}`, { name: sigForm.name, html: sigForm.html })
+  else await api.post('/api/signatures', { name: sigForm.name, html: sigForm.html })
+  showSigForm.value = false
+  await loadSignatures()
+}
+async function delSig(s: Sig) {
+  if (!(await confirmDialog(`Signatur „${s.name}" löschen?`, { title: 'Signatur löschen', danger: true, okText: 'Löschen' }))) return
+  await api.delete(`/api/signatures/${s.id}`)
+  await Promise.all([loadSignatures(), loadMailboxes()])
+}
 async function loadUsers() { if (isAdmin.value) users.value = (await api.get('/api/users')).data }
 
 onMounted(async () => {
@@ -108,6 +128,7 @@ onMounted(async () => {
   if (auth.me) Object.assign(profileForm, { firstName: auth.me.firstName, lastName: auth.me.lastName, email: auth.me.email })
   await loadMailboxes()
   await loadUsers()
+  await loadSignatures()
 })
 </script>
 
@@ -125,6 +146,10 @@ onMounted(async () => {
         <button @click="tab = 'mailboxes'" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] mb-1 transition"
           :class="tab === 'mailboxes' ? 'bg-white text-navy font-semibold shadow-sm' : 'text-neutral-500 hover:bg-beige'">
           <Icon name="envelope" class="w-4 h-4" /> Postfächer
+        </button>
+        <button @click="tab = 'signatures'" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] mb-1 transition"
+          :class="tab === 'signatures' ? 'bg-white text-navy font-semibold shadow-sm' : 'text-neutral-500 hover:bg-beige'">
+          <Icon name="pencil" class="w-4 h-4" /> Signaturen
         </button>
         <button v-if="isAdmin" @click="tab = 'users'" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] transition"
           :class="tab === 'users' ? 'bg-white text-navy font-semibold shadow-sm' : 'text-neutral-500 hover:bg-beige'">
@@ -217,6 +242,37 @@ onMounted(async () => {
             </section>
           </template>
 
+          <!-- SIGNATUREN -->
+          <template v-else-if="tab === 'signatures'">
+            <div class="flex items-center justify-between mb-4">
+              <h1 class="font-head text-[20px] text-ebony tracking-wide">Signaturen</h1>
+              <button @click="newSig" class="flex items-center gap-1 text-[12px] px-2.5 py-1.5 rounded-lg bg-coral text-white hover:bg-coral-dark"><Icon name="plus" class="w-3.5 h-3.5" /> Signatur</button>
+            </div>
+            <p class="text-[12px] text-neutral-500 mb-3">Wiederverwendbare HTML-Signaturen. Einem Postfach als Standard zuordenbar (unter „Postfächer") und pro Antwort im Antwort-Fenster wählbar/überschreibbar.</p>
+
+            <div v-if="showSigForm" class="mb-3 bg-white border border-[#e6dad6] rounded-xl p-3 grid gap-2">
+              <input v-model="sigForm.name" placeholder="Name (z. B. Standard, Aleks, Englisch)" class="border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px]" />
+              <textarea v-model="sigForm.html" rows="5" placeholder="&lt;p&gt;Mit freundlichen Grüßen&lt;br&gt;&lt;b&gt;MOST Connect KG&lt;/b&gt;&lt;br&gt;…&lt;/p&gt;" class="border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[12px] font-mono"></textarea>
+              <div v-if="sigForm.html" class="text-[11px]"><div class="text-[10px] uppercase tracking-wide text-neutral-400 mb-1">Vorschau</div><div class="border border-[#e6dad6] rounded-lg p-2 bg-white" v-html="sigForm.html"></div></div>
+              <div class="flex justify-end gap-2">
+                <button @click="showSigForm = false" class="text-[12px] px-3 py-1.5 rounded-lg text-neutral-600 hover:bg-beige">Abbrechen</button>
+                <button @click="saveSig" class="text-[12px] px-3 py-1.5 rounded-lg bg-coral text-white font-medium">Speichern</button>
+              </div>
+            </div>
+
+            <div class="space-y-2">
+              <div v-for="s in signatures" :key="s.id" class="bg-white border border-[#e6dad6] rounded-xl p-3 flex items-start gap-3">
+                <div class="min-w-0 flex-1">
+                  <div class="text-[13px] font-semibold text-navy">{{ s.name }}</div>
+                  <div class="text-[12px] text-neutral-600 mt-1 border-l-2 border-[#efe4df] pl-2" v-html="s.html"></div>
+                </div>
+                <button @click="editSig(s)" class="text-[11px] px-2 py-1 rounded-lg text-navy hover:bg-beige">Bearbeiten</button>
+                <button @click="delSig(s)" class="text-[11px] px-2 py-1 rounded-lg text-neutral-400 hover:bg-red-50 hover:text-red-600">Löschen</button>
+              </div>
+              <div v-if="!signatures.length" class="text-[12px] text-neutral-400">Noch keine Signaturen — „+ Signatur".</div>
+            </div>
+          </template>
+
           <!-- BENUTZER -->
           <template v-else-if="tab === 'users'">
             <div class="flex items-center justify-between mb-4">
@@ -276,14 +332,13 @@ onMounted(async () => {
           <label class="text-[11px] text-neutral-500">Ganze Mail löschen nach (Monate, 0 = nie)<input v-model.number="form.mailRetentionMonths" type="number" min="0" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px] text-ebony" /></label>
           <div class="col-span-2 text-[10px] text-neutral-400 leading-snug">Anhang-Dateien werden nach der Frist von der Platte entfernt (Text bleibt durchsuchbar, Original im Mail-Archiv). Mails/Anhänge mit offener Aufgabe bleiben immer erhalten.</div>
 
-          <div class="col-span-2 mt-1 pt-2 border-t border-[#efe4df] text-[11px] uppercase tracking-wide text-neutral-400">Signatur (HTML)</div>
-          <label class="col-span-2 text-[11px] text-neutral-500">Wird unter ausgehende Antworten gehängt
-            <textarea v-model="form.signature" rows="4" placeholder="&lt;p&gt;Mit freundlichen Grüßen&lt;br&gt;&lt;b&gt;MOST Connect KG&lt;/b&gt;&lt;br&gt;…&lt;/p&gt;" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[12px] text-ebony font-mono mt-0.5"></textarea>
+          <label class="col-span-2 text-[11px] text-neutral-500">Standard-Signatur
+            <select v-model="form.defaultSignatureId" class="w-full border border-[#e0d2cd] rounded-lg px-2 py-1.5 text-[13px] text-ebony mt-0.5">
+              <option :value="null">— keine —</option>
+              <option v-for="s in signatures" :key="s.id" :value="s.id">{{ s.name }}</option>
+            </select>
+            <span class="text-[10px] text-neutral-400">Signaturen verwaltest du unten im Abschnitt „Signaturen". Pro Antwort überschreibbar.</span>
           </label>
-          <div v-if="form.signature" class="col-span-2 text-[11px]">
-            <div class="text-[10px] uppercase tracking-wide text-neutral-400 mb-1">Vorschau</div>
-            <div class="border border-[#e6dad6] rounded-lg p-2 bg-white" v-html="form.signature"></div>
-          </div>
         </div>
         <div class="mt-4 flex justify-end gap-2">
           <button @click="showForm = false" class="text-[13px] px-3 py-1.5 rounded-lg text-neutral-600 hover:bg-beige">Abbrechen</button>

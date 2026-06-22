@@ -367,10 +367,18 @@ const replyTo = ref('')
 const replyCc = ref('')
 const replySubject = ref('')
 const replySignature = ref('')
+const replySignatures = ref<{ id: number; name: string; html: string }[]>([])
+const replySigChoice = ref<number | 'custom' | 'none'>('none')
 const replyFrom = ref('')
 const replyTab = ref<'schreiben' | 'vorschau'>('schreiben')
-const showSig = ref(false)
 const showCc = ref(false)
+function applySigChoice() {
+  if (replySigChoice.value === 'none') replySignature.value = ''
+  else if (replySigChoice.value !== 'custom') {
+    const s = replySignatures.value.find((x) => x.id === replySigChoice.value)
+    replySignature.value = s?.html || ''
+  }
+}
 const previewHtml = computed(() => {
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   let h = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;line-height:1.5">${esc(replyText.value).replace(/\n/g, '<br>')}</div>`
@@ -379,13 +387,15 @@ const previewHtml = computed(() => {
 })
 async function openReply() {
   if (!selTask.value) return
-  replyMsg.value = ''; replyText.value = ''; replyTab.value = 'schreiben'; showCc.value = false; showSig.value = false
+  replyMsg.value = ''; replyText.value = ''; replyTab.value = 'schreiben'; showCc.value = false
   try {
     const { data } = await api.get(`/api/tasks/${selTask.value.id}/reply-context`)
     replyTo.value = data.to || ''
     replyCc.value = data.cc || ''
     replySubject.value = data.subject || ''
+    replySignatures.value = data.signatures || []
     replySignature.value = data.signature || ''
+    replySigChoice.value = data.defaultSignatureId ?? (data.signature ? 'custom' : 'none')
     replyFrom.value = data.fromName ? `${data.fromName} <${data.fromEmail}>` : (data.fromEmail || '')
     if (replyCc.value) showCc.value = true
   } catch {
@@ -762,8 +772,16 @@ onBeforeUnmount(() => clearInterval(pollTimer))
         <div class="flex-1 min-h-0 overflow-y-auto px-4 py-3">
           <template v-if="replyTab === 'schreiben'">
             <textarea v-model="replyText" rows="10" placeholder="Antwort schreiben oder KI-Entwurf holen…" class="w-full border border-[#e0d2cd] rounded-lg px-3 py-2 text-[13px] bg-white leading-relaxed"></textarea>
-            <button @click="showSig = !showSig" class="mt-2 text-[11px] text-neutral-500 hover:text-coral">{{ showSig ? '▾' : '▸' }} Signatur {{ replySignature ? '(aktiv)' : '(keine)' }} bearbeiten</button>
-            <textarea v-if="showSig" v-model="replySignature" rows="4" placeholder="HTML-Signatur…" class="w-full border border-[#e0d2cd] rounded-lg px-3 py-2 text-[12px] bg-white font-mono mt-1"></textarea>
+            <div class="mt-2 flex items-center gap-2 flex-wrap">
+              <span class="text-[11px] text-neutral-500">Signatur:</span>
+              <select v-model="replySigChoice" @change="applySigChoice" class="border border-[#e0d2cd] rounded-lg px-2 py-1 text-[12px] bg-white">
+                <option v-for="s in replySignatures" :key="s.id" :value="s.id">{{ s.name }}</option>
+                <option value="custom">Eigene…</option>
+                <option value="none">Keine</option>
+              </select>
+              <span class="text-[10px] text-neutral-400">in Vorschau sichtbar</span>
+            </div>
+            <textarea v-if="replySigChoice === 'custom'" v-model="replySignature" rows="4" placeholder="HTML-Signatur…" class="w-full border border-[#e0d2cd] rounded-lg px-3 py-2 text-[12px] bg-white font-mono mt-1"></textarea>
           </template>
           <div v-else class="border border-[#e6dad6] rounded-lg p-4 bg-white" v-html="previewHtml"></div>
         </div>

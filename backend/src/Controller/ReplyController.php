@@ -5,6 +5,7 @@ namespace App\Controller;
 use App\Entity\Task;
 use App\Mail\Mailer;
 use App\Service\Llm\LlmClient;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -15,6 +16,7 @@ class ReplyController extends AbstractController
     public function __construct(
         private readonly LlmClient $llm,
         private readonly Mailer $mailer,
+        private readonly EntityManagerInterface $em,
     ) {
     }
 
@@ -68,11 +70,18 @@ class ReplyController extends AbstractController
         $subject = $src?->subject ?: $conv?->subject;
         $subject = preg_match('/^\s*(re|aw)\s*:/iu', (string) $subject) ? $subject : 'Re: '.$subject;
 
+        $signatures = array_map(
+            fn (\App\Entity\Signature $s) => ['id' => $s->id, 'name' => $s->name, 'html' => $s->html],
+            $this->em->getRepository(\App\Entity\Signature::class)->findBy([], ['name' => 'ASC'])
+        );
+
         return $this->json([
             'to' => implode(', ', $to),
             'cc' => implode(', ', $cc),
             'subject' => $subject,
-            'signature' => $mailbox?->signature ?? '',
+            'signatures' => $signatures,
+            'defaultSignatureId' => $mailbox?->defaultSignature?->id,
+            'signature' => $mailbox?->defaultSignature?->html ?? '',
             'fromName' => $mailbox?->name ?? '',
             'fromEmail' => $mailbox?->email ?? '',
         ]);
