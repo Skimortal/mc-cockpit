@@ -96,18 +96,29 @@ class InboxController extends AbstractController
 
         $rows = [];
         foreach ($convs as $c) {
-            $mb = $c->mailbox;
-            if (!$mb || !\in_array($mb->id, $visibleIds, true)) {
+            $involved = $this->involvedMailboxes($c);
+            // nur sichtbare beteiligte Postfächer
+            $visInvolved = array_filter($involved, fn (Mailbox $m) => \in_array($m->id, $visibleIds, true));
+            if (!$visInvolved) {
                 continue; // nicht sichtbar für diesen User
             }
-            if ('global' === $filter && 'global' !== $mb->scope) {
+            // Filter über den Postfach-Switcher gegen die beteiligten Postfächer
+            if (is_numeric($filter) && !isset($visInvolved[(int) $filter])) {
                 continue;
             }
-            if ('mine' === $filter && !($mb->owner && $user && $mb->owner->getId() === $user->getId())) {
+            if ('global' === $filter && !array_filter($visInvolved, fn (Mailbox $m) => 'global' === $m->scope)) {
                 continue;
             }
-            if (is_numeric($filter) && (int) $filter !== $mb->id) {
+            if ('mine' === $filter && !array_filter($visInvolved, fn (Mailbox $m) => $m->owner && $user && $m->owner->getId() === $user->getId())) {
                 continue;
+            }
+            // Anzeige-Postfach: beim Filter das gefilterte, sonst das gepinnte (falls beteiligt) bzw. erstes beteiligtes
+            if (is_numeric($filter)) {
+                $mb = $visInvolved[(int) $filter];
+            } elseif ($c->mailbox && isset($visInvolved[$c->mailbox->id])) {
+                $mb = $c->mailbox;
+            } else {
+                $mb = reset($visInvolved);
             }
 
             // Effektives Datum = neueste Nachricht im Thread (Fallback lastMessageAt/createdAt).
@@ -344,21 +355,69 @@ class InboxController extends AbstractController
         return $r;
     }
 
-    /** Posteingang-Sichtbarkeit: global ODER eigenes persönliches ODER (geteilt, weil Aufgabe existiert). */
-    private function maySee(Conversation $c, ?User $user, bool $hasTask): bool
+    /** @var array<string, Mailbox>|null E-Mail (lowercase) => Postfach */
+    private ?array $mbByEmail = null;
+
+    /** @return array<string, Mailbox> */
+    private function mailboxesByEmail(): array
     {
-        $mb = $c->mailbox;
-        if (!$mb) {
-            return $hasTask;
-        }
-        if ('global' === $mb->scope) {
-            return true;
-        }
-        if ($user && $mb->owner && $mb->owner->getId() === $user->getId()) {
-            return true;
+        if (null === $this->mbByEmail) {
+            $this->mbByEmail = [];
+            foreach ($this->em->getRepository(Mailbox::class)->findAll() as $m) {
+                if ($m->email) {
+                    $this->mbByEmail[mb_strtolower($m->email)] = $m;
+                }
+            }
         }
 
-        return $hasTask; // persönliche Mail wird mit dem Umwandeln zur Aufgabe fürs Team sichtbar
+        return $this->mbByEmail;
+    }
+
+    /**
+     * Alle Postfächer, deren Adresse in From/To/CC irgendeiner Mail des Threads vorkommt.
+     * Fallback: das gepinnte Postfach. So erscheint ein office@↔support@-Thread in beiden Posteingängen.
+     *
+     * @return array<int, Mailbox>
+     */
+    private function involvedMailboxes(Conversation $c): array
+    {
+        $map = $this->mailboxesByEmail();
+        $out = [];
+        foreach ($c->emails as $e) {
+            $addrs = [(string) $e->fromAddress, (string) $e->toAddress];
+            foreach (preg_split('/[,;]+/', (string) $e->ccAddress) ?: [] as $cc) {
+                $addrs[] = $cc;
+            }
+            foreach ($addrs as $a) {
+                $al = mb_strtolower(trim($a));
+                if ('' !== $al && isset($map[$al])) {
+                    $out[$map[$al]->id] = $map[$al];
+                }
+            }
+        }
+        if (!$out && $c->mailbox) {
+            $out[$c->mailbox->id] = $c->mailbox;
+        }
+
+        return $out;
+    }
+
+    /** Sichtbarkeit: ein beteiligtes Postfach ist global ODER eigenes persönliches ODER (geteilt, weil Aufgabe). */
+    private function maySee(Conversation $c, ?User $user, bool $hasTask): bool
+    {
+        if ($hasTask) {
+            return true;
+        }
+        foreach ($this->involvedMailboxes($c) as $mb) {
+            if ('global' === $mb->scope) {
+                return true;
+            }
+            if ($user && $mb->owner && $mb->owner->getId() === $user->getId()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @return list<Mailbox> globale + eigene persönliche Postfächer */
