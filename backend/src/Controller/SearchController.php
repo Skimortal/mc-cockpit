@@ -9,6 +9,7 @@ use App\Entity\Document;
 use App\Entity\Task;
 use App\Entity\User;
 use App\Service\Search\SearchIndexer;
+use App\Util\Tz;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -190,7 +191,7 @@ class SearchController extends AbstractController
             if (!$this->maySee($c, $user, isset($taskConvIds[$c->id]))) {
                 continue;
             }
-            $convOut[] = ['id' => $c->id, 'subject' => $c->subject, 'subjectHl' => $c->subject, 'from' => $c->customerName ?: $c->customerEmail, 'hasTask' => isset($taskConvIds[$c->id]), 'date' => $c->lastMessageAt?->format('Y-m-d H:i'), 'mailbox' => $c->mailbox?->name, 'snippet' => ''];
+            $convOut[] = ['id' => $c->id, 'subject' => $c->subject, 'subjectHl' => $c->subject, 'from' => $c->customerName ?: $c->customerEmail, 'hasTask' => isset($taskConvIds[$c->id]), 'date' => Tz::fmt($c->lastMessageAt), 'mailbox' => $c->mailbox?->name, 'snippet' => ''];
             if (\count($convOut) >= $limit) {
                 break;
             }

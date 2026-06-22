@@ -11,6 +11,7 @@ use App\Entity\Task;
 use App\Service\Attachment\AttachmentConverter;
 use App\Service\Attachment\DocumentExtractor;
 use App\Service\Search\SearchIndexer;
+use App\Util\Tz;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -375,7 +376,7 @@ class CompanyController extends AbstractController
                 'id' => $cv->id,
                 'subject' => $cv->subject,
                 'from' => $cv->customerName ?: $cv->customerEmail,
-                'date' => $eff?->format('Y-m-d H:i'),
+                'date' => Tz::fmt($eff),
                 '_ts' => $eff?->getTimestamp() ?? 0,
             ];
         }

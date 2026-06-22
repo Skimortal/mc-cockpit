@@ -12,6 +12,7 @@ use App\Mail\ImapPoller;
 use App\Service\Attachment\AttachmentConverter;
 use App\Service\Llm\LlmClient;
 use App\Service\Triage\EmailTriageService;
+use App\Util\Tz;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -131,7 +132,7 @@ class InboxController extends AbstractController
                     'from' => $c->customerName ?: $c->customerEmail,
                     'email' => $c->customerEmail,
                     'subject' => $c->subject,
-                    'lastMessageAt' => $eff->format('Y-m-d H:i'),
+                    'lastMessageAt' => Tz::fmt($eff),
                     'messageCount' => $c->emails->count(),
                     'state' => $task ? ('done' === $task->status ? 'erledigt' : 'aufgabe') : 'neu',
                     'taskId' => $task?->id,
@@ -168,7 +169,7 @@ class InboxController extends AbstractController
                 'dir' => $e->direction,
                 'who' => 'out' === $e->direction ? 'Wir' : ($e->fromAddress ?: $c->customerName),
                 'to' => $e->toAddress,
-                'time' => $e->occurredAt->format('Y-m-d H:i'),
+                'time' => Tz::fmt($e->occurredAt),
                 'body' => mb_substr(trim((string) ($e->bodyText ?: strip_tags((string) $e->bodyHtml))), 0, 8000),
                 'attachments' => $atts,
             ];
@@ -255,7 +256,7 @@ class InboxController extends AbstractController
         $lines = ['Betreff: '.$c->subject, ''];
         foreach ($c->emails as $e) {
             $who = 'out' === $e->direction ? 'WIR' : ($e->fromAddress ?: ($c->customerName ?? 'Kunde'));
-            $lines[] = sprintf('[%s, %s] %s', $who, $e->occurredAt->format('Y-m-d H:i'), $e->subject ?? '');
+            $lines[] = sprintf('[%s, %s] %s', $who, Tz::fmt($e->occurredAt), $e->subject ?? '');
             $lines[] = mb_substr(trim((string) ($e->bodyText ?: strip_tags((string) $e->bodyHtml))), 0, 3000);
             $lines[] = '';
         }

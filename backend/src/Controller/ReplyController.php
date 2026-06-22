@@ -8,6 +8,7 @@ use App\Entity\Task;
 use App\Entity\TaskFile;
 use App\Mail\Mailer;
 use App\Service\Llm\LlmClient;
+use App\Util\Tz;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -250,7 +251,7 @@ class ReplyController extends AbstractController
         $lines = ['Betreff: '.$c->subject, '', '--- E-Mail-Verlauf (älteste zuerst) ---'];
         foreach ($c->emails as $e) {
             $who = 'out' === $e->direction ? 'WIR' : ($e->fromAddress ?? 'Kunde');
-            $lines[] = sprintf('[%s, %s] %s', $who, $e->occurredAt->format('Y-m-d H:i'), $e->subject ?? '');
+            $lines[] = sprintf('[%s, %s] %s', $who, Tz::fmt($e->occurredAt), $e->subject ?? '');
             $lines[] = mb_substr(trim((string) ($e->bodyText ?: strip_tags((string) $e->bodyHtml))), 0, 3000);
             $lines[] = '';
         }
@@ -271,7 +272,7 @@ class ReplyController extends AbstractController
         $emails = $task->conversation?->emails ?? [];
         foreach ($emails as $e) {
             $who = 'out' === $e->direction ? 'WIR' : ($e->fromAddress ?? 'Kunde');
-            $lines[] = sprintf('[%s, %s] %s', $who, $e->occurredAt->format('Y-m-d H:i'), $e->subject ?? '');
+            $lines[] = sprintf('[%s, %s] %s', $who, Tz::fmt($e->occurredAt), $e->subject ?? '');
             $lines[] = mb_substr(trim((string) ($e->bodyText ?: strip_tags((string) $e->bodyHtml))), 0, 3000);
             $lines[] = '';
         }

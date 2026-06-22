@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Entity\Notification;
 use App\Entity\User;
+use App\Util\Tz;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -33,7 +34,7 @@ class NotificationController extends AbstractController
                 'taskId' => $n->taskId,
                 'conversationId' => $n->conversationId,
                 'read' => $n->isRead,
-                'createdAt' => $n->createdAt->format('Y-m-d H:i'),
+                'createdAt' => Tz::fmt($n->createdAt),
             ], $items),
         ]);
     }

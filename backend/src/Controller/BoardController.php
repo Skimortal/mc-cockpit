@@ -8,6 +8,7 @@ use App\Entity\Task;
 use App\Entity\TaskComment;
 use App\Entity\User;
 use App\Mail\Mailer;
+use App\Util\Tz;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -227,7 +228,7 @@ class BoardController extends AbstractController
             'comments' => array_map(fn (TaskComment $k) => [
                 'author' => $k->authorName,
                 'body' => $k->body,
-                'createdAt' => $k->createdAt->format('Y-m-d H:i'),
+                'createdAt' => Tz::fmt($k->createdAt),
             ], $t->comments->toArray()),
             'files' => array_map(fn (\App\Entity\TaskFile $f) => [
                 'id' => $f->id,
@@ -243,7 +244,7 @@ class BoardController extends AbstractController
             'source' => $src ? [
                 'subject' => $src->subject,
                 'from' => $src->fromAddress,
-                'occurredAt' => $src->occurredAt->format('Y-m-d H:i'),
+                'occurredAt' => Tz::fmt($src->occurredAt),
                 'bodyText' => mb_substr((string) ($src->bodyText ?: strip_tags((string) $src->bodyHtml)), 0, 5000),
             ] : null,
         ];

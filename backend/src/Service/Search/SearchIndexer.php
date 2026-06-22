@@ -7,6 +7,7 @@ use App\Entity\Company;
 use App\Entity\Conversation;
 use App\Entity\Document;
 use App\Entity\Task;
+use App\Util\Tz;
 use Doctrine\ORM\EntityManagerInterface;
 use Meilisearch\Client;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -163,7 +164,7 @@ final class SearchIndexer
             'customer' => trim(($c->customerName ?? '').' '.($c->customerEmail ?? '')),
             'from' => $c->customerName ?: $c->customerEmail,
             'body' => mb_substr(trim($body), 0, 30000),
-            'date' => $eff?->format('Y-m-d H:i'),
+            'date' => Tz::fmt($eff),
             'mailboxId' => $mb?->id ?? 0,
             'mailboxName' => $mb?->name ?? '',
             'mailboxScope' => $mb?->scope ?? 'none',
