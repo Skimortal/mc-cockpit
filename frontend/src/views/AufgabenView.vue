@@ -379,6 +379,24 @@ function pickSig(s: { id: number; html: string }) {
 function pickNoSig() {
   activeSigId.value = null; replySignature.value = ''; editSig.value = false
 }
+// Anhänge im Antwort-Modal (Aufgaben-Dateien auswählen oder neue hochladen)
+const replyFileIds = ref<number[]>([])
+const replyFileInput = ref<HTMLInputElement | null>(null)
+function toggleReplyFile(id: number) {
+  const i = replyFileIds.value.indexOf(id)
+  if (i >= 0) replyFileIds.value.splice(i, 1); else replyFileIds.value.push(id)
+}
+function triggerReplyUpload() {
+  if (replyFileInput.value) replyFileInput.value.value = ''
+  replyFileInput.value?.click()
+}
+async function onReplyFilePick(e: Event) {
+  const files = (e.target as HTMLInputElement).files
+  if (!files?.length || !selTask.value) return
+  const before = new Set((selTask.value.files || []).map((f) => f.id))
+  await uploadTaskFiles(Array.from(files))
+  for (const f of selTask.value?.files || []) if (!before.has(f.id)) replyFileIds.value.push(f.id)
+}
 const previewHtml = computed(() => {
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   let h = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;line-height:1.5">${esc(replyText.value).replace(/\n/g, '<br>')}</div>`
@@ -397,6 +415,7 @@ async function openReply() {
     replySignature.value = data.signature || ''
     activeSigId.value = data.defaultSignatureId ?? null
     editSig.value = false
+    replyFileIds.value = []
     replyFrom.value = data.fromName ? `${data.fromName} <${data.fromEmail}>` : (data.fromEmail || '')
     if (replyCc.value) showCc.value = true
   } catch {
@@ -417,7 +436,7 @@ async function sendReply() {
   replyBusy.value = true; replyMsg.value = ''
   try {
     const { data } = await api.post(`/api/tasks/${selTask.value.id}/reply`, {
-      body: replyText.value, to: replyTo.value, cc: replyCc.value, subject: replySubject.value, signature: replySignature.value,
+      body: replyText.value, to: replyTo.value, cc: replyCc.value, subject: replySubject.value, signature: replySignature.value, fileIds: replyFileIds.value,
     })
     replyOpen.value = false
     notifyMsg.value = `✓ Antwort gesendet an ${data.to}`
@@ -797,6 +816,24 @@ onBeforeUnmount(() => clearInterval(pollTimer))
                   :class="!replySignature ? 'border-coral ring-1 ring-coral/30 bg-coral/5 text-coral' : 'border-[#e6dad6] bg-white text-neutral-500'">Keine Signatur</button>
               </div>
             </div>
+
+            <!-- Anhänge -->
+            <div class="mt-3">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-[10px] uppercase tracking-wide text-neutral-400">Anhänge</span>
+                <button @click="triggerReplyUpload" :disabled="taskUploading" class="text-[11px] text-coral font-medium disabled:opacity-50">{{ taskUploading ? 'Lädt hoch…' : '+ Datei hochladen' }}</button>
+                <input ref="replyFileInput" type="file" multiple class="hidden" @change="onReplyFilePick" />
+              </div>
+              <div v-if="selTask && selTask.files.length" class="space-y-1">
+                <label v-for="f in selTask.files" :key="f.id" class="flex items-center gap-2 text-[12px] bg-white border border-[#e6dad6] rounded-lg px-2 py-1.5 cursor-pointer hover:border-coral">
+                  <input type="checkbox" :checked="replyFileIds.includes(f.id)" @change="toggleReplyFile(f.id)" class="accent-coral" />
+                  <span class="w-6 h-6 rounded bg-navy/10 text-navy text-[9px] grid place-items-center font-semibold uppercase shrink-0">{{ f.ext }}</span>
+                  <span class="truncate flex-1 text-ebony">{{ f.name }}</span>
+                  <span class="text-[10px] text-neutral-300 shrink-0">{{ fmtFileSize(f.size) }}</span>
+                </label>
+              </div>
+              <div v-else class="text-[11px] text-neutral-400">Keine Dateien an der Aufgabe — „+ Datei hochladen" oder oben Dateien an die Aufgabe hängen.</div>
+            </div>
           </template>
           <div v-else class="border border-[#e6dad6] rounded-lg p-4 bg-white" v-html="previewHtml"></div>
         </div>
@@ -805,7 +842,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
         <div class="px-4 py-3 border-t border-[#e6dad6] flex items-center gap-2 shrink-0">
           <span v-if="replyMsg" class="text-[11px] text-red-600">{{ replyMsg }}</span>
           <button @click="replyOpen = false" class="ml-auto text-[12px] px-3 py-1.5 rounded-lg text-neutral-600 hover:bg-beige">Abbrechen</button>
-          <button @click="sendReply" :disabled="replyBusy || !replyText.trim() || !replyTo.trim()" class="text-[13px] px-4 py-1.5 rounded-lg bg-coral text-white font-medium disabled:opacity-50">{{ replyBusy ? 'Senden…' : '✉️ Senden' }}</button>
+          <button @click="sendReply" :disabled="replyBusy || !replyText.trim() || !replyTo.trim()" class="text-[13px] px-4 py-1.5 rounded-lg bg-coral text-white font-medium disabled:opacity-50">{{ replyBusy ? 'Senden…' : (replyFileIds.length ? `✉️ Senden (${replyFileIds.length} Anh.)` : '✉️ Senden') }}</button>
         </div>
       </div>
     </div>

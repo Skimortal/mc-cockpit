@@ -18,7 +18,10 @@ final class Mailer
     {
     }
 
-    public function sendReply(Task $task, string $body, ?string $subjectOverride = null, ?string $to = null, ?string $cc = null, ?string $signatureHtml = null): Email
+    /**
+     * @param list<array{path:string,name:string,type:?string}> $attachments Dateien zum Anhängen
+     */
+    public function sendReply(Task $task, string $body, ?string $subjectOverride = null, ?string $to = null, ?string $cc = null, ?string $signatureHtml = null, array $attachments = []): Email
     {
         $conversation = $task->conversation;
         $source = $task->sourceEmail;
@@ -69,6 +72,11 @@ final class Mailer
             ->html($bodyHtml);
         if ($ccList) {
             $mime->cc(...$ccList);
+        }
+        foreach ($attachments as $a) {
+            if (!empty($a['path']) && is_file($a['path'])) {
+                $mime->attachFromPath($a['path'], $a['name'] ?? basename($a['path']), $a['type'] ?: null);
+            }
         }
 
         $headers = $mime->getHeaders();
