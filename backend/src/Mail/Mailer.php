@@ -2,6 +2,7 @@
 
 namespace App\Mail;
 
+use App\Entity\Conversation;
 use App\Entity\Email;
 use App\Entity\Mailbox;
 use App\Entity\Task;
@@ -18,17 +19,35 @@ final class Mailer
     {
     }
 
-    /**
-     * @param list<array{path:string,name:string,type:?string}> $attachments Dateien zum Anhängen
-     */
+    /** Antwort aus einer Aufgabe – delegiert an die konversationsbasierte Variante. */
     public function sendReply(Task $task, string $body, ?string $subjectOverride = null, ?string $to = null, ?string $cc = null, ?string $signatureHtml = null, array $attachments = []): Email
     {
-        $conversation = $task->conversation;
-        $source = $task->sourceEmail;
-        $mailbox = $conversation?->mailbox;
+        if (!$task->conversation) {
+            throw new \RuntimeException('Aufgabe hat keine Konversation für den Versand.');
+        }
 
-        if (!$mailbox || !$conversation) {
-            throw new \RuntimeException('Aufgabe hat keine Konversation/Postfach für den Versand.');
+        return $this->sendConversationReply($task->conversation, $body, $subjectOverride, $to, $cc, $signatureHtml, $attachments, $task->sourceEmail);
+    }
+
+    /**
+     * Antwort direkt auf eine Konversation (ohne Aufgabe). Speichert die ausgehende Mail im Thread.
+     *
+     * @param list<array{path:string,name:string,type:?string}> $attachments Dateien zum Anhängen
+     */
+    public function sendConversationReply(Conversation $conversation, string $body, ?string $subjectOverride = null, ?string $to = null, ?string $cc = null, ?string $signatureHtml = null, array $attachments = [], ?Email $source = null): Email
+    {
+        // Quelle = letzte eingehende Mail des Threads (für Betreff/Threading), falls nicht übergeben.
+        if (!$source) {
+            foreach ($conversation->emails as $e) {
+                if ('in' === $e->direction) {
+                    $source = $e;
+                }
+            }
+        }
+        $mailbox = $conversation->mailbox;
+
+        if (!$mailbox) {
+            throw new \RuntimeException('Konversation hat kein Postfach für den Versand.');
         }
         if ('' === $mailbox->password) {
             throw new \RuntimeException('Für das Postfach ist kein SMTP-Passwort hinterlegt.');

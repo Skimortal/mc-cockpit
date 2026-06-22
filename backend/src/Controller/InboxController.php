@@ -176,7 +176,7 @@ class InboxController extends AbstractController
     }
 
     #[Route('/api/conversations/{id}/to-task', methods: ['POST'])]
-    public function toTask(Conversation $c, #[CurrentUser] ?User $user): JsonResponse
+    public function toTask(Conversation $c, Request $request, #[CurrentUser] ?User $user): JsonResponse
     {
         if (!$this->maySee($c, $user, false)) {
             return $this->json(['error' => 'Kein Zugriff.'], 403);
@@ -195,7 +195,9 @@ class InboxController extends AbstractController
             return $this->json(['error' => 'Keine eingehende Mail.'], 422);
         }
 
-        $task = $this->triage->triage($lastIn);
+        // simple = ohne KI-Triage (z. B. nur um eine Datei anzuhängen)
+        $simple = (bool) (json_decode($request->getContent(), true)['simple'] ?? false);
+        $task = $simple ? null : $this->triage->triage($lastIn);
         if (!$task) {
             $task = new Task();
             $task->title = $c->subject ?: '(ohne Titel)';

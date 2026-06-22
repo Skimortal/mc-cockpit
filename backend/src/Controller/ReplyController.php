@@ -2,6 +2,8 @@
 
 namespace App\Controller;
 
+use App\Entity\Conversation;
+use App\Entity\Email;
 use App\Entity\Task;
 use App\Entity\TaskFile;
 use App\Mail\Mailer;
@@ -127,6 +129,133 @@ class ReplyController extends AbstractController
         }
 
         return $this->json(['ok' => true, 'emailId' => $email->id, 'to' => $email->toAddress, 'subject' => $email->subject]);
+    }
+
+    // ===== Konversationsbasiert (Antworten ohne Aufgabe) =====
+
+    #[Route('/api/conversations/{id}/reply-context', methods: ['GET'])]
+    public function convReplyContext(Conversation $c): JsonResponse
+    {
+        $mailbox = $c->mailbox;
+        $own = $mailbox ? mb_strtolower($mailbox->email) : '';
+        $src = null;
+        foreach ($c->emails as $e) {
+            if ('in' === $e->direction) {
+                $src = $e;
+            }
+        }
+
+        $to = $src?->fromAddress ? [$src->fromAddress] : ($c->customerEmail ? [$c->customerEmail] : []);
+        $cc = [];
+        foreach (preg_split('/[,;]+/', (string) ($src?->ccAddress ?? '')) ?: [] as $a) {
+            $a = trim($a);
+            if ('' !== $a && str_contains($a, '@')) {
+                $cc[] = $a;
+            }
+        }
+        $norm = fn (array $xs) => array_values(array_unique(array_filter($xs, fn ($x) => mb_strtolower($x) !== $own)));
+        $to = $norm($to);
+        $cc = array_values(array_filter($norm($cc), fn ($x) => !\in_array(mb_strtolower($x), array_map('mb_strtolower', $to), true)));
+
+        $subject = $src?->subject ?: $c->subject;
+        $subject = preg_match('/^\s*(re|aw)\s*:/iu', (string) $subject) ? $subject : 'Re: '.$subject;
+
+        $signatures = array_map(
+            fn (\App\Entity\Signature $s) => ['id' => $s->id, 'name' => $s->name, 'html' => $s->html],
+            $this->em->getRepository(\App\Entity\Signature::class)->findBy([], ['name' => 'ASC'])
+        );
+
+        $task = $this->em->getRepository(Task::class)->findOneBy(['conversation' => $c]);
+        $files = $task ? array_map(fn (TaskFile $f) => [
+            'id' => $f->id, 'name' => $f->filename, 'size' => $f->size,
+            'ext' => strtoupper((string) (pathinfo($f->filename, \PATHINFO_EXTENSION) ?: 'DATEI')),
+        ], $this->em->getRepository(TaskFile::class)->findBy(['task' => $task], ['id' => 'ASC'])) : [];
+
+        return $this->json([
+            'to' => implode(', ', $to),
+            'cc' => implode(', ', $cc),
+            'subject' => $subject,
+            'signatures' => $signatures,
+            'defaultSignatureId' => $mailbox?->defaultSignature?->id,
+            'signature' => $mailbox?->defaultSignature?->html ?? '',
+            'fromName' => $mailbox?->name ?? '',
+            'fromEmail' => $mailbox?->email ?? '',
+            'taskId' => $task?->id,
+            'files' => $files,
+        ]);
+    }
+
+    #[Route('/api/conversations/{id}/draft-reply', methods: ['POST'])]
+    public function convDraft(Conversation $c): JsonResponse
+    {
+        $system = <<<TXT
+            Du schreibst im Namen der MOST Connect KG (Handelsvertretung) eine Antwort auf die unten
+            stehende E-Mail-Konversation. Stil: professionell, freundlich, KNAPP, klar. Sprache: dieselbe
+            wie die letzte Kundennachricht (i. d. R. Deutsch). Gib NUR den E-Mail-Text aus (keine
+            Betreffzeile, keine Meta-Kommentare). Wenn der Name des Absenders bekannt ist, sprich ihn an.
+            Schließe mit „Mit freundlichen Grüßen\nMOST Connect KG". Erfinde keine Fakten/Zusagen, die
+            nicht aus dem Verlauf hervorgehen.
+            TXT;
+
+        try {
+            $draft = $this->llm->complete($system, $this->convContext($c));
+        } catch (\Throwable $e) {
+            return $this->json(['error' => $e->getMessage()], 502);
+        }
+
+        return $this->json(['draft' => $draft]);
+    }
+
+    #[Route('/api/conversations/{id}/reply', methods: ['POST'])]
+    public function convReply(Conversation $c, Request $request): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true) ?: [];
+        $body = trim((string) ($data['body'] ?? ''));
+        if ('' === $body) {
+            return $this->json(['error' => 'Leerer Text.'], 400);
+        }
+
+        $task = $this->em->getRepository(Task::class)->findOneBy(['conversation' => $c]);
+        $attachments = [];
+        foreach ((array) ($data['fileIds'] ?? []) as $fid) {
+            $f = $this->em->getRepository(TaskFile::class)->find((int) $fid);
+            if ($f && $task && $f->task?->id === $task->id && '' !== $f->path) {
+                $attachments[] = [
+                    'path' => $this->projectDir.'/var/task-files/'.$f->path,
+                    'name' => $f->filename,
+                    'type' => $f->contentType,
+                ];
+            }
+        }
+
+        try {
+            $email = $this->mailer->sendConversationReply(
+                $c,
+                $body,
+                $data['subject'] ?? null,
+                isset($data['to']) ? (string) $data['to'] : null,
+                isset($data['cc']) ? (string) $data['cc'] : null,
+                isset($data['signature']) ? (string) $data['signature'] : null,
+                $attachments,
+            );
+        } catch (\Throwable $e) {
+            return $this->json(['error' => $e->getMessage()], 422);
+        }
+
+        return $this->json(['ok' => true, 'emailId' => $email->id, 'to' => $email->toAddress, 'subject' => $email->subject]);
+    }
+
+    private function convContext(Conversation $c): string
+    {
+        $lines = ['Betreff: '.$c->subject, '', '--- E-Mail-Verlauf (älteste zuerst) ---'];
+        foreach ($c->emails as $e) {
+            $who = 'out' === $e->direction ? 'WIR' : ($e->fromAddress ?? 'Kunde');
+            $lines[] = sprintf('[%s, %s] %s', $who, $e->occurredAt->format('Y-m-d H:i'), $e->subject ?? '');
+            $lines[] = mb_substr(trim((string) ($e->bodyText ?: strip_tags((string) $e->bodyHtml))), 0, 3000);
+            $lines[] = '';
+        }
+
+        return implode("\n", $lines);
     }
 
     private function context(Task $task): string

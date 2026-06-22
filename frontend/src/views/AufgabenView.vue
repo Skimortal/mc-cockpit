@@ -382,6 +382,8 @@ function pickNoSig() {
 // Anhänge im Antwort-Modal (Aufgaben-Dateien auswählen oder neue hochladen)
 const replyFileIds = ref<number[]>([])
 const replyFileInput = ref<HTMLInputElement | null>(null)
+const replyTaskId = ref<number | null>(null)
+const replyFiles = ref<{ id: number; name: string; size: number; ext: string }[]>([])
 function toggleReplyFile(id: number) {
   const i = replyFileIds.value.indexOf(id)
   if (i >= 0) replyFileIds.value.splice(i, 1); else replyFileIds.value.push(id)
@@ -392,10 +394,24 @@ function triggerReplyUpload() {
 }
 async function onReplyFilePick(e: Event) {
   const files = (e.target as HTMLInputElement).files
-  if (!files?.length || !selTask.value) return
-  const before = new Set((selTask.value.files || []).map((f) => f.id))
-  await uploadTaskFiles(Array.from(files))
-  for (const f of selTask.value?.files || []) if (!before.has(f.id)) replyFileIds.value.push(f.id)
+  if (!files?.length || !selConvId.value) return
+  taskUploading.value = true
+  try {
+    // ohne Aufgabe: leise eine (KI-freie) Aufgabe anlegen, damit die Datei gespeichert werden kann
+    if (!replyTaskId.value) {
+      const r = await api.post(`/api/conversations/${selConvId.value}/to-task`, { simple: true })
+      replyTaskId.value = r.data.taskId
+    }
+    for (const f of Array.from(files)) {
+      const fd = new FormData()
+      fd.append('file', f)
+      await api.post(`/api/tasks/${replyTaskId.value}/files`, fd)
+    }
+    const { data } = await api.get(`/api/conversations/${selConvId.value}/reply-context`)
+    replyFiles.value = data.files || []
+    replyFileIds.value = replyFiles.value.map((f) => f.id) // hochgeladene direkt anhängen
+    await loadBoard()
+  } finally { taskUploading.value = false }
 }
 const previewHtml = computed(() => {
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -403,16 +419,12 @@ const previewHtml = computed(() => {
   if (replySignature.value.trim()) h += '<br>' + replySignature.value
   return h
 })
-async function replyFromConversation() {
-  if (!selConvId.value) return
-  if (!selTask.value) await convertToTask() // legt automatisch eine Aufgabe an
-  if (selTask.value) await openReply()
-}
 async function openReply() {
-  if (!selTask.value) return
+  if (!selConvId.value) return
   replyMsg.value = ''; replyText.value = ''; replyTab.value = 'schreiben'; showCc.value = false
+  replyTaskId.value = null; replyFiles.value = []; replyFileIds.value = []
   try {
-    const { data } = await api.get(`/api/tasks/${selTask.value.id}/reply-context`)
+    const { data } = await api.get(`/api/conversations/${selConvId.value}/reply-context`)
     replyTo.value = data.to || ''
     replyCc.value = data.cc || ''
     replySubject.value = data.subject || ''
@@ -420,7 +432,8 @@ async function openReply() {
     replySignature.value = data.signature || ''
     activeSigId.value = data.defaultSignatureId ?? null
     editSig.value = false
-    replyFileIds.value = []
+    replyTaskId.value = data.taskId ?? null
+    replyFiles.value = data.files || []
     replyFrom.value = data.fromName ? `${data.fromName} <${data.fromEmail}>` : (data.fromEmail || '')
     if (replyCc.value) showCc.value = true
   } catch {
@@ -429,18 +442,18 @@ async function openReply() {
   replyOpen.value = true
 }
 async function draftReply() {
-  if (!selTask.value) return
+  if (!selConvId.value) return
   replyBusy.value = true; replyMsg.value = ''
   try {
-    replyText.value = (await api.post(`/api/tasks/${selTask.value.id}/draft-reply`)).data.draft
+    replyText.value = (await api.post(`/api/conversations/${selConvId.value}/draft-reply`)).data.draft
     replyTab.value = 'schreiben'
-  } catch { replyMsg.value = 'KI-Entwurf fehlgeschlagen.' } finally { replyBusy.value = false }
+  } catch (e: any) { replyMsg.value = '⚠️ ' + (e?.response?.data?.error || 'KI-Entwurf fehlgeschlagen.') } finally { replyBusy.value = false }
 }
 async function sendReply() {
-  if (!selTask.value || !replyText.value.trim() || !replyTo.value.trim()) return
+  if (!selConvId.value || !replyText.value.trim() || !replyTo.value.trim()) return
   replyBusy.value = true; replyMsg.value = ''
   try {
-    const { data } = await api.post(`/api/tasks/${selTask.value.id}/reply`, {
+    const { data } = await api.post(`/api/conversations/${selConvId.value}/reply`, {
       body: replyText.value, to: replyTo.value, cc: replyCc.value, subject: replySubject.value, signature: replySignature.value, fileIds: replyFileIds.value,
     })
     replyOpen.value = false
@@ -733,7 +746,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
 
           <!-- Antwort -->
           <div class="px-4 py-3 border-t border-[#e6dad6] bg-beige-soft">
-            <button @click="replyFromConversation" :disabled="converting" class="w-full py-2.5 rounded-xl bg-coral text-white text-sm font-medium hover:bg-coral-dark disabled:opacity-50" :title="!selTask ? 'Erzeugt automatisch eine Aufgabe und öffnet die Antwort' : ''">✉️ Antworten</button>
+            <button @click="openReply" class="w-full py-2.5 rounded-xl bg-coral text-white text-sm font-medium hover:bg-coral-dark">✉️ Antworten</button>
           </div>
         </template>
       </div>
@@ -829,15 +842,15 @@ onBeforeUnmount(() => clearInterval(pollTimer))
                 <button @click="triggerReplyUpload" :disabled="taskUploading" class="text-[11px] text-coral font-medium disabled:opacity-50">{{ taskUploading ? 'Lädt hoch…' : '+ Datei hochladen' }}</button>
                 <input ref="replyFileInput" type="file" multiple class="hidden" @change="onReplyFilePick" />
               </div>
-              <div v-if="selTask && selTask.files.length" class="space-y-1">
-                <label v-for="f in selTask.files" :key="f.id" class="flex items-center gap-2 text-[12px] bg-white border border-[#e6dad6] rounded-lg px-2 py-1.5 cursor-pointer hover:border-coral">
+              <div v-if="replyFiles.length" class="space-y-1">
+                <label v-for="f in replyFiles" :key="f.id" class="flex items-center gap-2 text-[12px] bg-white border border-[#e6dad6] rounded-lg px-2 py-1.5 cursor-pointer hover:border-coral">
                   <input type="checkbox" :checked="replyFileIds.includes(f.id)" @change="toggleReplyFile(f.id)" class="accent-coral" />
                   <span class="w-6 h-6 rounded bg-navy/10 text-navy text-[9px] grid place-items-center font-semibold uppercase shrink-0">{{ f.ext }}</span>
                   <span class="truncate flex-1 text-ebony">{{ f.name }}</span>
                   <span class="text-[10px] text-neutral-300 shrink-0">{{ fmtFileSize(f.size) }}</span>
                 </label>
               </div>
-              <div v-else class="text-[11px] text-neutral-400">Keine Dateien an der Aufgabe — „+ Datei hochladen" oder oben Dateien an die Aufgabe hängen.</div>
+              <div v-else class="text-[11px] text-neutral-400">Keine Dateien — „+ Datei hochladen" hängt eine an.</div>
             </div>
           </template>
           <div v-else class="border border-[#e6dad6] rounded-lg p-4 bg-white" v-html="previewHtml"></div>
