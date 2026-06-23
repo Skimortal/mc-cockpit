@@ -19,7 +19,7 @@ interface Comment { author: string; body: string; createdAt: string }
 interface TaskFile { id: number; name: string; size: number; ext: string; uploadedBy: string | null; date: string; preview: boolean }
 interface Task {
   id: number; title: string; type: string; status: string; priority: string; dueDate: string | null; overdue?: boolean
-  aiSummary: string | null; suggestedAssignee: string | null; assignee: Person | null
+  aiSummary: string | null; description: string | null; suggestedAssignee: string | null; assignee: Person | null
   conversationId: number | null; companyId: number | null; companyName: string | null; tags: string[]; comments: Comment[]; files: TaskFile[]
 }
 interface Att { id: number; name: string; size: number; type: string | null; pruned?: boolean }
@@ -40,7 +40,6 @@ const convs = ref<Conv[]>([])
 const tasks = ref<Task[]>([])
 const team = ref<Person[]>([])
 const companies = ref<{ id: number; name: string }[]>([])
-const group = ref<'person' | 'status'>('person')
 const showDone = ref(false)
 const loading = ref(true)
 
@@ -54,7 +53,10 @@ const commentText = ref('')
 const converting = ref(false)
 const dragId = ref<number | null>(null)
 
-const selTask = computed(() => tasks.value.find((t) => t.conversationId === selConvId.value) || null)
+const selTaskId = ref<number | null>(null) // für manuelle Aufgaben ohne Konversation
+const selTask = computed(() =>
+  (selConvId.value ? tasks.value.find((t) => t.conversationId === selConvId.value) : tasks.value.find((t) => t.id === selTaskId.value)) || null,
+)
 // Konversation neueste zuerst (Original-Index für Auf-/Zuklappen beibehalten)
 const orderedMsgs = computed(() => (detail.value?.messages || []).map((m, i) => ({ m, i })).reverse())
 
@@ -80,20 +82,29 @@ const visibleConvs = computed(() => {
   return cs
 })
 
-function boardColumns() {
+// Status-Spalten; innerhalb jeder Spalte nach Person gruppiert (ich zuerst, dann Team, dann Unzugewiesen).
+function statusColumns() {
   const active = tasks.value.filter((t) => t.status !== 'done' || showDone.value)
-  if (group.value === 'person') {
-    const meId = auth.me?.id ?? null
-    const cols = []
-    if (meId) {
-      cols.push({ name: 'Meine Aufgaben', alarm: false, mine: true, type: 'person', val: String(meId), items: active.filter((t) => t.assignee?.id === meId) })
-    }
-    cols.push({ name: 'Unzugewiesen', alarm: true, type: 'person', val: '', items: active.filter((t) => !t.assignee) })
-    // andere Teammitglieder (eigene Person nicht doppelt zeigen – steckt in „Meine Aufgaben")
-    cols.push(...team.value.filter((p) => p.id !== meId).map((p) => ({ name: p.name, alarm: false, type: 'person', val: String(p.id), items: active.filter((t) => t.assignee?.id === p.id) })))
-    return cols
-  }
-  return STATUS_KEYS.map((s) => ({ name: STATUS[s], alarm: false, type: 'status', val: s, items: active.filter((t) => t.status === s) }))
+  const meId = auth.me?.id ?? null
+  const people: { id: number | null; name: string; mine: boolean }[] = [
+    ...(meId ? [{ id: meId, name: 'Meine Aufgaben', mine: true }] : []),
+    ...team.value.filter((p) => p.id !== meId).map((p) => ({ id: p.id, name: p.name, mine: false })),
+    { id: null, name: 'Unzugewiesen', mine: false },
+  ]
+  return STATUS_KEYS.filter((s) => s !== 'done' || showDone.value).map((s) => {
+    const colTasks = active.filter((t) => t.status === s)
+    const groups = people
+      .map((p) => ({
+        key: `${s}:${p.id ?? 'none'}`,
+        name: p.name,
+        mine: p.mine,
+        status: s,
+        assigneeId: p.id,
+        items: colTasks.filter((t) => (p.id === null ? !t.assignee : t.assignee?.id === p.id)),
+      }))
+      .filter((g) => g.items.length > 0)
+    return { status: s, name: STATUS[s], items: colTasks, groups }
+  })
 }
 
 async function loadInbox() {
@@ -200,7 +211,15 @@ async function manualFetch() {
 }
 
 const lastAtt = ref<number | null>(null)
+// Manuelle Aufgabe (ohne Konversation) im Detail anzeigen.
+function selectTask(t: Task) {
+  selConvId.value = null
+  detail.value = null
+  selTaskId.value = t.id
+  commentText.value = ''; notifyMsg.value = ''
+}
 async function selectConv(id: number) {
+  selTaskId.value = null
   selConvId.value = id
   replyText.value = ''; replyMsg.value = ''; commentText.value = ''; explanation.value = ''; notifyMsg.value = ''
   const { data } = await api.get(`/api/conversations/${id}`)
@@ -226,6 +245,7 @@ function openMatchedAtt() {
 function closeDetail() {
   detail.value = null
   selConvId.value = null
+  selTaskId.value = null
   lastAtt.value = null
   if (route.query.conv) router.replace({ path: '/aufgaben' })
 }
@@ -468,12 +488,53 @@ async function sendReply() {
   } finally { replyBusy.value = false }
 }
 
-function onDrop(col: { type: string; val: string }) {
+// Ablegen auf eine Spalte ändert den Status; Ablegen auf eine Personengruppe zusätzlich den Zuständigen.
+async function onDropTo(status: string, assigneeId?: number | null) {
   const t = tasks.value.find((x) => x.id === dragId.value)
   dragId.value = null
   if (!t) return
-  if (col.type === 'person') assign(t, col.val === '' ? '' : Number(col.val))
-  else setStatus(t, col.val)
+  const calls: Promise<unknown>[] = []
+  if (t.status !== status) calls.push(api.post(`/api/tasks/${t.id}/status`, { status }))
+  if (assigneeId !== undefined && (t.assignee?.id ?? null) !== assigneeId) {
+    calls.push(api.post(`/api/tasks/${t.id}/assign`, { userId: assigneeId }))
+  }
+  if (calls.length) {
+    await Promise.all(calls)
+    await Promise.all([loadBoard(), loadInbox()])
+  }
+}
+
+// --- Neue Aufgabe (volles Formular, ohne Mail-Bezug) ---
+const newTaskOpen = ref(false)
+const ntSaving = ref(false)
+const nt = ref({ title: '', description: '', status: 'open', priority: 'normal', dueDate: '', assigneeId: '' as number | '', companyId: '' as number | '', tags: [] as string[], notify: true })
+function openNewTask(status = 'open', assigneeId: number | null = null) {
+  nt.value = { title: '', description: '', status, priority: 'normal', dueDate: '', assigneeId: assigneeId ?? '', companyId: '', tags: [], notify: true }
+  newTaskOpen.value = true
+}
+function ntToggleTag(tag: string) {
+  nt.value.tags = nt.value.tags.includes(tag) ? nt.value.tags.filter((t) => t !== tag) : [...nt.value.tags, tag]
+}
+async function saveNewTask() {
+  if (!nt.value.title.trim() || ntSaving.value) return
+  ntSaving.value = true
+  try {
+    await api.post('/api/tasks', {
+      title: nt.value.title.trim(),
+      description: nt.value.description.trim(),
+      status: nt.value.status,
+      priority: nt.value.priority,
+      dueDate: nt.value.dueDate || null,
+      assigneeId: nt.value.assigneeId === '' ? null : Number(nt.value.assigneeId),
+      companyId: nt.value.companyId === '' ? null : Number(nt.value.companyId),
+      tags: nt.value.tags,
+      notify: nt.value.notify,
+    })
+    newTaskOpen.value = false
+    await loadBoard()
+  } catch (e: any) {
+    alert(e?.response?.data?.error || 'Aufgabe konnte nicht angelegt werden.')
+  } finally { ntSaving.value = false }
 }
 
 watch(() => [route.query.conv, route.query.att], (v) => { if (v[0]) selectConv(Number(v[0])) })
@@ -545,39 +606,51 @@ onBeforeUnmount(() => clearInterval(pollTimer))
       <div class="flex-1 min-w-0 flex flex-col">
         <div class="px-5 pt-3 pb-2 flex items-center gap-2">
           <span class="text-[10px] uppercase tracking-wider text-neutral-400 mr-1">Aufgaben</span>
-          <div class="flex items-center bg-beige rounded-lg p-0.5">
-            <button @click="group = 'person'" class="text-[11px] px-2.5 py-0.5 rounded" :class="group === 'person' ? 'bg-white text-navy shadow-sm font-medium' : 'text-neutral-500'">Person</button>
-            <button @click="group = 'status'" class="text-[11px] px-2.5 py-0.5 rounded" :class="group === 'status' ? 'bg-white text-navy shadow-sm font-medium' : 'text-neutral-500'">Status</button>
-          </div>
+          <button @click="openNewTask()" class="text-[11px] px-2.5 py-1 rounded-lg bg-coral text-white font-medium hover:bg-coral-dark flex items-center gap-1"><Icon name="plus" class="w-3.5 h-3.5" /> Neue Aufgabe</button>
           <button @click="showDone = !showDone" class="text-[11px] px-2 py-0.5 rounded" :class="showDone ? 'bg-navy text-white' : 'bg-white text-neutral-500 border border-[#e6dad6]'">{{ showDone ? 'erledigte ausblenden' : 'erledigte zeigen' }}</button>
           <button @click="loadAll" title="Aktualisieren" class="ml-auto w-7 h-7 grid place-items-center rounded-lg text-neutral-500 hover:bg-beige"><Icon name="refresh" class="w-4 h-4" /></button>
         </div>
         <div class="flex-1 overflow-x-auto px-5 pb-4">
           <div class="flex gap-4 h-full">
-            <div v-for="col in boardColumns()" :key="col.name" class="dropcol w-56 shrink-0 rounded-xl transition"
-              :class="col.name === 'Meine Aufgaben' ? 'bg-coral/5 ring-1 ring-coral/20 p-1.5' : ''"
+            <div v-for="col in statusColumns()" :key="col.status" class="dropcol w-60 shrink-0 rounded-xl transition flex flex-col"
               @dragover.prevent="($event.currentTarget as HTMLElement).classList.add('over')"
               @dragleave="($event.currentTarget as HTMLElement).classList.remove('over')"
-              @drop="($event.currentTarget as HTMLElement).classList.remove('over'); onDrop(col)">
+              @drop="($event.currentTarget as HTMLElement).classList.remove('over'); onDropTo(col.status)">
               <div class="flex items-center justify-between mb-2 px-1">
-                <span class="text-[12px] font-semibold" :class="col.name === 'Meine Aufgaben' ? 'text-coral' : (col.alarm && col.items.length ? 'text-coral' : 'text-navy')">{{ col.name === 'Meine Aufgaben' ? '📌 ' : (col.alarm ? '⚠ ' : '') }}{{ col.name }}</span>
-                <span class="text-[10px] px-1.5 rounded-full bg-coral/15 text-coral">{{ col.items.length }}</span>
+                <span class="text-[12px] font-semibold text-navy">{{ col.name }}</span>
+                <div class="flex items-center gap-1">
+                  <span class="text-[10px] px-1.5 rounded-full bg-coral/15 text-coral">{{ col.items.length }}</span>
+                  <button @click="openNewTask(col.status)" title="Aufgabe in dieser Spalte anlegen" class="w-5 h-5 grid place-items-center rounded text-neutral-400 hover:bg-coral/10 hover:text-coral text-[15px] leading-none">+</button>
+                </div>
               </div>
-              <div class="space-y-2 min-h-[64px]">
-                <article v-for="t in col.items" :key="t.id" draggable="true"
-                  @dragstart="dragId = t.id" @dragend="dragId = null"
-                  @click="t.conversationId && selectConv(t.conversationId)"
-                  class="relative bg-white border border-[#e6dad6] rounded-xl p-2.5 shadow-sm hover:shadow-md cursor-pointer">
-                  <button @click.stop="setStatus(t, 'done')" title="Als erledigt markieren"
-                    class="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-beige-soft hover:bg-[#3f9d6b] hover:text-white text-neutral-400 text-[11px] leading-none border border-[#e6dad6] flex items-center justify-center">✓</button>
-                  <div class="flex items-center gap-1.5 mb-1.5 pr-6 flex-wrap">
-                    <span v-for="tag in t.tags.slice(0, 2)" :key="tag" class="text-[10px] px-1.5 py-0.5 rounded" :style="badgeStyle(tag)">{{ tag }}</span>
-                    <span v-if="t.priority === 'high'" class="text-[10px] px-1.5 py-0.5 rounded" style="background:#eb5d4f;color:#fff">Hoch</span>
-                    <span v-if="t.dueDate" class="ml-auto text-[10px]" :class="t.overdue ? 'text-coral font-semibold' : 'text-neutral-400'">⏱ {{ t.dueDate.slice(5) }}</span>
+              <div class="space-y-3 min-h-[64px] overflow-y-auto pr-0.5">
+                <div v-for="g in col.groups" :key="g.key" class="dropgrp transition"
+                  :class="g.mine ? 'rounded-lg bg-coral/5 ring-1 ring-coral/15 p-1' : ''"
+                  @dragover.stop.prevent="($event.currentTarget as HTMLElement).classList.add('overg')"
+                  @dragleave="($event.currentTarget as HTMLElement).classList.remove('overg')"
+                  @drop.stop="($event.currentTarget as HTMLElement).classList.remove('overg'); onDropTo(g.status, g.assigneeId)">
+                  <div class="flex items-center justify-between px-1 mb-1">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide" :class="g.mine ? 'text-coral' : 'text-neutral-400'">{{ g.mine ? '📌 ' : '' }}{{ g.name }} <span class="text-neutral-300">·{{ g.items.length }}</span></span>
+                    <button @click="openNewTask(g.status, g.assigneeId)" :title="`Aufgabe für ${g.name} anlegen`" class="w-4 h-4 grid place-items-center rounded text-neutral-300 hover:text-coral text-[14px] leading-none">+</button>
                   </div>
-                  <div class="text-[12.5px] leading-snug text-ebony">{{ t.title }}</div>
-                </article>
-                <div v-if="!col.items.length" class="text-[11px] text-neutral-300 px-1 py-5 text-center border-2 border-dashed border-[#e6dad6] rounded-lg">hierher ziehen</div>
+                  <div class="space-y-2">
+                    <article v-for="t in g.items" :key="t.id" draggable="true"
+                      @dragstart="dragId = t.id" @dragend="dragId = null"
+                      @click="t.conversationId ? selectConv(t.conversationId) : selectTask(t)"
+                      class="relative bg-white border border-[#e6dad6] rounded-xl p-2.5 shadow-sm hover:shadow-md cursor-pointer">
+                      <button @click.stop="setStatus(t, 'done')" title="Als erledigt markieren"
+                        class="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-beige-soft hover:bg-[#3f9d6b] hover:text-white text-neutral-400 text-[11px] leading-none border border-[#e6dad6] flex items-center justify-center">✓</button>
+                      <div class="flex items-center gap-1.5 mb-1.5 pr-6 flex-wrap">
+                        <span v-for="tag in t.tags.slice(0, 2)" :key="tag" class="text-[10px] px-1.5 py-0.5 rounded" :style="badgeStyle(tag)">{{ tag }}</span>
+                        <span v-if="t.priority === 'high'" class="text-[10px] px-1.5 py-0.5 rounded" style="background:#eb5d4f;color:#fff">Hoch</span>
+                        <span v-if="!t.conversationId" class="text-[10px] px-1.5 py-0.5 rounded bg-navy/10 text-navy">manuell</span>
+                        <span v-if="t.dueDate" class="ml-auto text-[10px]" :class="t.overdue ? 'text-coral font-semibold' : 'text-neutral-400'">⏱ {{ t.dueDate.slice(5) }}</span>
+                      </div>
+                      <div class="text-[12.5px] leading-snug text-ebony">{{ t.title }}</div>
+                    </article>
+                  </div>
+                </div>
+                <div v-if="!col.items.length" class="text-[11px] text-neutral-300 px-1 py-5 text-center border-2 border-dashed border-[#e6dad6] rounded-lg">leer · hierher ziehen</div>
               </div>
             </div>
           </div>
@@ -586,12 +659,12 @@ onBeforeUnmount(() => clearInterval(pollTimer))
 
       <!-- Detail -->
       <div class="w-[380px] shrink-0 bg-white border-l border-[#e6dad6] flex flex-col">
-        <div v-if="!detail" class="h-full flex items-center justify-center text-center text-neutral-400 text-sm px-6">Wähle links eine Konversation<br>oder eine Aufgabe.</div>
+        <div v-if="!detail && !selTask" class="h-full flex items-center justify-center text-center text-neutral-400 text-sm px-6">Wähle links eine Konversation<br>oder eine Aufgabe.</div>
         <template v-else>
           <div class="px-4 py-3 border-b border-[#e6dad6] flex items-start gap-2">
             <div class="min-w-0">
-              <div class="text-[14px] font-semibold text-navy leading-tight truncate">{{ detail.subject }}</div>
-              <div class="text-[11px] text-neutral-400 mt-0.5">{{ detail.customerName || detail.customerEmail }}</div>
+              <div class="text-[14px] font-semibold text-navy leading-tight truncate">{{ detail ? detail.subject : (selTask?.title || 'Aufgabe') }}</div>
+              <div class="text-[11px] text-neutral-400 mt-0.5">{{ detail ? (detail.customerName || detail.customerEmail) : 'Manuelle Aufgabe' }}</div>
             </div>
             <button @click="closeDetail" class="ml-auto text-neutral-400 hover:text-neutral-700 text-xl leading-none">×</button>
           </div>
@@ -601,6 +674,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
             <div v-if="selTask" class="p-3 rounded-xl bg-beige-soft border border-[#e6dad6]">
               <div class="text-[13px] font-semibold text-ebony">{{ selTask.title }}</div>
               <div v-if="selTask.aiSummary" class="mt-1 p-2 rounded-lg bg-coral/10 text-[12px] text-[#8a3328]"><b>KI:</b> {{ selTask.aiSummary }}</div>
+              <div v-if="selTask.description" class="mt-1 text-[12px] text-neutral-600 whitespace-pre-wrap">{{ selTask.description }}</div>
 
               <!-- Status + Priorität (Schnellzustand) -->
               <div class="mt-2 flex items-center gap-1 flex-wrap">
@@ -684,7 +758,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
                 </div>
               </div>
             </div>
-            <div v-else>
+            <div v-else-if="detail">
               <div class="flex gap-2">
                 <button @click="convertToTask" :disabled="converting || explaining" class="flex-1 py-2.5 rounded-xl bg-coral text-white text-sm font-medium hover:bg-coral-dark disabled:opacity-50">✨ In Aufgabe umwandeln</button>
                 <button @click="explainConv" :disabled="converting || explaining" class="px-3 py-2.5 rounded-xl border border-coral/40 text-coral text-sm font-medium hover:bg-coral/10 disabled:opacity-50 whitespace-nowrap">{{ explaining ? '🤔 …' : '🔎 KI erklärt' }}</button>
@@ -707,6 +781,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
             </div>
 
             <!-- Konversation, neueste zuerst -->
+            <template v-if="detail">
             <div class="mt-4 text-[10px] uppercase tracking-wide text-neutral-400 mb-1.5">Konversation · {{ detail.messages.length }} Nachricht(en) · neueste zuerst</div>
             <div v-for="x in orderedMsgs" :key="x.i" class="border rounded-lg mb-2 overflow-hidden" :class="x.m.dir === 'out' ? 'border-coral/30' : 'border-[#e6dad6]'">
               <div @click="toggleMsg(x.i)" class="flex items-center gap-2 px-3 py-2 cursor-pointer" :class="x.m.dir === 'out' ? 'bg-coral/5' : 'bg-beige-soft'">
@@ -744,10 +819,11 @@ onBeforeUnmount(() => clearInterval(pollTimer))
                 </div>
               </div>
             </div>
+            </template>
           </div>
 
-          <!-- Antwort -->
-          <div class="px-4 py-3 border-t border-[#e6dad6] bg-beige-soft">
+          <!-- Antwort (nur bei Konversation) -->
+          <div v-if="detail" class="px-4 py-3 border-t border-[#e6dad6] bg-beige-soft">
             <button @click="openReply" class="w-full py-2.5 rounded-xl bg-coral text-white text-sm font-medium hover:bg-coral-dark">✉️ Antworten</button>
           </div>
         </template>
@@ -863,6 +939,74 @@ onBeforeUnmount(() => clearInterval(pollTimer))
           <span v-if="replyMsg" class="text-[11px] text-red-600">{{ replyMsg }}</span>
           <button @click="replyOpen = false" class="ml-auto text-[12px] px-3 py-1.5 rounded-lg text-neutral-600 hover:bg-beige">Abbrechen</button>
           <button @click="sendReply" :disabled="replyBusy || !replyText.trim() || !replyTo.trim()" class="text-[13px] px-4 py-1.5 rounded-lg bg-coral text-white font-medium disabled:opacity-50">{{ replyBusy ? 'Senden…' : (replyFileIds.length ? `✉️ Senden (${replyFileIds.length} Anh.)` : '✉️ Senden') }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Neue Aufgabe (volles Formular) -->
+    <div v-if="newTaskOpen" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" @click.self="newTaskOpen = false">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+        <div class="flex items-center gap-2 px-5 py-3 border-b border-[#e6dad6]">
+          <Icon name="plus" class="w-4 h-4 text-coral shrink-0" />
+          <span class="text-[14px] font-semibold text-navy">Neue Aufgabe</span>
+          <button @click="newTaskOpen = false" class="ml-auto text-neutral-400 hover:text-ebony text-2xl leading-none px-1">×</button>
+        </div>
+        <div class="px-5 py-4 overflow-y-auto space-y-3">
+          <div>
+            <label class="text-[10px] uppercase tracking-wide text-neutral-400">Titel *</label>
+            <input v-model="nt.title" placeholder="Worum geht es?" @keyup.enter="saveNewTask"
+              class="mt-1 w-full border border-[#e0d2cd] rounded-lg px-3 py-2 text-[13px]" />
+          </div>
+          <div>
+            <label class="text-[10px] uppercase tracking-wide text-neutral-400">Beschreibung</label>
+            <textarea v-model="nt.description" rows="3" placeholder="Details, Kontext, Anweisungen…"
+              class="mt-1 w-full border border-[#e0d2cd] rounded-lg px-3 py-2 text-[13px] resize-y"></textarea>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-[10px] uppercase tracking-wide text-neutral-400">Status</label>
+              <select v-model="nt.status" class="mt-1 w-full border border-[#e0d2cd] rounded-lg px-2 py-2 text-[13px] bg-white">
+                <option v-for="s in STATUS_KEYS" :key="s" :value="s">{{ STATUS[s] }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-[10px] uppercase tracking-wide text-neutral-400">Priorität</label>
+              <select v-model="nt.priority" class="mt-1 w-full border border-[#e0d2cd] rounded-lg px-2 py-2 text-[13px] bg-white">
+                <option v-for="p in PRIO_KEYS" :key="p" :value="p">{{ PRIO[p] }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-[10px] uppercase tracking-wide text-neutral-400">Zuständig</label>
+              <select v-model="nt.assigneeId" class="mt-1 w-full border border-[#e0d2cd] rounded-lg px-2 py-2 text-[13px] bg-white">
+                <option value="">— Unzugewiesen —</option>
+                <option v-for="p in team" :key="p.id" :value="p.id">{{ p.name }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-[10px] uppercase tracking-wide text-neutral-400">Fällig</label>
+              <input v-model="nt.dueDate" type="date" class="mt-1 w-full border border-[#e0d2cd] rounded-lg px-2 py-2 text-[13px] bg-white" />
+            </div>
+          </div>
+          <div>
+            <label class="text-[10px] uppercase tracking-wide text-neutral-400">Kunde</label>
+            <select v-model="nt.companyId" class="mt-1 w-full border border-[#e0d2cd] rounded-lg px-2 py-2 text-[13px] bg-white">
+              <option value="">— Kein Kunde —</option>
+              <option v-for="co in companies" :key="co.id" :value="co.id">{{ co.name }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-[10px] uppercase tracking-wide text-neutral-400">Tags</label>
+            <div class="mt-1 flex flex-wrap gap-1">
+              <button v-for="tag in TAGS" :key="tag" type="button" @click="ntToggleTag(tag)" class="text-[11px] px-2 py-1 rounded" :style="nt.tags.includes(tag) ? badgeStyle(tag) : 'background:#f0e7e3;color:#b7a9a3'">{{ tag }}</button>
+            </div>
+          </div>
+          <label v-if="nt.assigneeId !== '' && Number(nt.assigneeId) !== (auth.me?.id ?? -1)" class="flex items-center gap-2 text-[12px] text-neutral-600">
+            <input v-model="nt.notify" type="checkbox" class="rounded" /> Zuständigen per E-Mail benachrichtigen
+          </label>
+        </div>
+        <div class="px-5 py-3 border-t border-[#e6dad6] flex items-center gap-2">
+          <button @click="newTaskOpen = false" class="ml-auto text-[12px] px-3 py-1.5 rounded-lg text-neutral-600 hover:bg-beige">Abbrechen</button>
+          <button @click="saveNewTask" :disabled="ntSaving || !nt.title.trim()" class="text-[13px] px-4 py-1.5 rounded-lg bg-coral text-white font-medium disabled:opacity-50">{{ ntSaving ? 'Anlegen…' : 'Aufgabe anlegen' }}</button>
         </div>
       </div>
     </div>

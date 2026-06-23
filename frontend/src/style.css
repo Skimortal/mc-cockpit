@@ -20,4 +20,5 @@ body { background: #dcd1d0; color: #191118; font-family: Inter, system-ui, sans-
 ::-webkit-scrollbar-thumb { background: #c9bdb7; border-radius: 4px; }
 
 .dropcol.over { background: #eb5d4f12; outline: 2px dashed #eb5d4f66; outline-offset: -3px; }
+.dropgrp.overg { background: #eb5d4f1a; outline: 2px dashed #eb5d4f88; outline-offset: -2px; border-radius: 8px; }
 [draggable=true]:active { cursor: grabbing; }

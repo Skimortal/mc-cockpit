@@ -53,6 +53,51 @@ class BoardController extends AbstractController
         return $this->json(array_map(fn (Task $t) => $this->taskArr($t), $tasks));
     }
 
+    /** Manuelle Aufgabe ohne Mail-Bezug anlegen (volles Formular). */
+    #[Route('/api/tasks', methods: ['POST'])]
+    public function createTask(Request $request, #[CurrentUser] ?User $user): JsonResponse
+    {
+        $d = json_decode($request->getContent(), true) ?: [];
+        $title = trim((string) ($d['title'] ?? ''));
+        if ('' === $title) {
+            return $this->json(['error' => 'Titel fehlt.'], 422);
+        }
+
+        $t = new Task();
+        $t->title = mb_substr($title, 0, 255);
+        $t->description = trim((string) ($d['description'] ?? '')) ?: null;
+        $t->status = \in_array($d['status'] ?? '', ['open', 'in_progress', 'waiting', 'done'], true) ? $d['status'] : 'open';
+        $t->priority = \in_array($d['priority'] ?? '', ['low', 'normal', 'high'], true) ? $d['priority'] : 'normal';
+        $due = trim((string) ($d['dueDate'] ?? ''));
+        $t->dueDate = $due ? new \DateTimeImmutable($due.' 09:00') : null;
+        $tags = $d['tags'] ?? [];
+        $t->tags = \is_array($tags) ? array_values(array_filter(array_map('strval', $tags))) : [];
+        if (!empty($d['assigneeId'])) {
+            $t->assignee = $this->em->getRepository(User::class)->find($d['assigneeId']);
+        }
+        if (!empty($d['companyId'])) {
+            $t->company = $this->em->getRepository(Company::class)->find($d['companyId']);
+        }
+        $this->em->persist($t);
+        $this->em->flush();
+
+        // Zuweisung an jemand anderen: In-App benachrichtigen, optional auch per E-Mail (wie bei assign()).
+        $emailed = false;
+        if ($t->assignee && $user && $t->assignee->getId() !== $user->getId()) {
+            $by = $user->getFirstName() ?: $user->getEmail();
+            $this->notify($t->assignee, $user, 'assigned', sprintf('%s hat dir „%s" zugewiesen.', $by, $t->title), $t);
+            $this->em->flush();
+            if (($d['notify'] ?? true) && $t->assignee->getEmail()) {
+                $emailed = $this->emailAssignee($t, $user);
+            }
+        }
+
+        $out = $this->taskArr($t);
+        $out['emailed'] = $emailed;
+
+        return $this->json($out, 201);
+    }
+
     #[Route('/api/tasks/{id}/assign', methods: ['POST'])]
     public function assign(Task $task, Request $request, #[CurrentUser] ?User $user): JsonResponse
     {
@@ -218,6 +263,7 @@ class BoardController extends AbstractController
             'dueDate' => $t->dueDate?->format('Y-m-d'),
             'overdue' => $t->dueDate && 'done' !== $t->status && $t->dueDate < new \DateTimeImmutable('today'),
             'aiSummary' => $t->aiSummary,
+            'description' => $t->description,
             'suggestedAssignee' => $t->suggestedAssignee,
             'assignee' => $t->assignee ? $this->userArr($t->assignee) : null,
             'conversationId' => $t->conversation?->id,
