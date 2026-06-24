@@ -17,11 +17,16 @@ final class LpnParser
     }
 
     /**
+     * Liest die LPN-Daten aus den jüngsten eingehenden Nachrichten eines Threads –
+     * PO und MHD/Paletten stehen bei Radenko oft in verschiedenen Mails.
+     *
+     * @param list<Email> $emails eingehende Mails des Threads, chronologisch (alt → neu)
+     *
      * @return array{pos: list<array<string,mixed>>, actionable: bool, warning: ?string}
      */
-    public function parse(Email $email): array
+    public function parse(array $emails): array
     {
-        $data = $this->llm->extract($this->system(), $this->userText($email), $this->schema(), null, 1200);
+        $data = $this->llm->extract($this->system(), $this->userText($emails), $this->schema(), null, 1200);
 
         $pos = [];
         foreach ((array) ($data['pos'] ?? []) as $p) {
@@ -88,32 +93,42 @@ final class LpnParser
         }
     }
 
-    private function userText(Email $email): string
+    /** @param list<Email> $emails */
+    private function userText(array $emails): string
     {
-        $body = $email->bodyText ?: strip_tags((string) $email->bodyHtml);
-        // Zitierte Vorgängermails abschneiden – Radenkos eigentliche Anweisung steht oben.
-        foreach (["\nFrom:", "\nVon:", "\n-----Original", "\nAm "] as $marker) {
-            $pos = mb_strpos($body, $marker);
-            if (false !== $pos && $pos > 40) {
-                $body = mb_substr($body, 0, $pos);
-            }
-        }
-        $body = mb_substr(trim($body), 0, 3000);
+        // Jüngste zuerst, höchstens die letzten 4 eingehenden Nachrichten.
+        $recent = \array_slice(array_reverse($emails), 0, 4);
+        $subject = $recent[0]->subject ?? '(kein Betreff)';
 
-        return sprintf(
-            "Von: %s\nBetreff: %s\n\n%s",
-            $email->fromAddress ?? '?',
-            $email->subject ?? '(kein Betreff)',
-            $body
-        );
+        $blocks = [];
+        foreach ($recent as $i => $e) {
+            $body = $e->bodyText ?: strip_tags((string) $e->bodyHtml);
+            // Zitierte Vorgängermails abschneiden – Radenkos eigentliche Anweisung steht oben.
+            foreach (["\nFrom:", "\nVon:", "\n-----Original", "\nAm ", "\nSent:", "\nGesendet:"] as $marker) {
+                $cut = mb_strpos($body, $marker);
+                if (false !== $cut && $cut > 30) {
+                    $body = mb_substr($body, 0, $cut);
+                }
+            }
+            $body = trim($body);
+            if ('' === $body) {
+                continue;
+            }
+            $label = 0 === $i ? 'NEUESTE Nachricht' : 'frühere Nachricht';
+            $blocks[] = sprintf('--- %s (%s) ---'."\n".'%s', $label, $e->occurredAt->format('Y-m-d'), mb_substr($body, 0, 1500));
+        }
+
+        return sprintf("Betreff: %s\n\n%s", $subject, implode("\n\n", $blocks));
     }
 
     private function system(): string
     {
         return <<<'TXT'
-            Du extrahierst aus einer Lieferanten-E-Mail die Daten zum Erstellen von LPN-Etiketten
-            (Manhattan-Lagerportal). Der Absender (oft Radenko Marinković / Mladegs Pak) schreibt
-            meist kurz auf Bosnisch/Serbisch oder Deutsch.
+            Du extrahierst aus den jüngsten Nachrichten eines E-Mail-Threads mit einem Lieferanten
+            (oft Radenko Marinković / Mladegs Pak) die Daten zum Erstellen von LPN-Etiketten
+            (Manhattan-Lagerportal). Er schreibt meist kurz auf Bosnisch/Serbisch oder Deutsch.
+            PO-Nummer und MHD/Paletten können in VERSCHIEDENEN Nachrichten stehen – kombiniere sie.
+            Gibt es mehrere PO-Nummern, nimm die in der NEUESTEN Nachricht genannte.
 
             Du brauchst pro Bestellung (PO):
             - po: die PO-/Bestellnummer. Sie steht im FLIESSTEXT der neuesten Nachricht (lange Zahl,

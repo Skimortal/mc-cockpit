@@ -30,12 +30,12 @@ final class LpnController extends AbstractController
     #[Route('/api/conversations/{id}/lpn/prepare', methods: ['POST'])]
     public function prepare(Conversation $conv): JsonResponse
     {
-        $email = $this->sourceEmail($conv);
-        if (!$email) {
-            return new JsonResponse(['error' => 'Keine Mail in dieser Konversation.'], 422);
+        $inbound = $this->inboundEmails($conv);
+        if (!$inbound) {
+            return new JsonResponse(['error' => 'Keine eingehende Mail in dieser Konversation.'], 422);
         }
 
-        $result = $this->parser->parse($email);
+        $result = $this->parser->parse($inbound);
         $company = $this->companyForEmail($conv->customerEmail);
 
         return new JsonResponse([
@@ -111,6 +111,19 @@ final class LpnController extends AbstractController
         }
 
         return implode("\n", $lines);
+    }
+
+    /** @return list<Email> eingehende Mails, chronologisch (alt → neu) */
+    private function inboundEmails(Conversation $conv): array
+    {
+        $in = [];
+        foreach ($conv->emails as $e) {
+            if ('in' === $e->direction) {
+                $in[] = $e;
+            }
+        }
+
+        return $in;
     }
 
     private function sourceEmail(Conversation $conv): ?Email
