@@ -98,11 +98,13 @@ function statusColumns() {
         key: `${s}:${p.id ?? 'none'}`,
         name: p.name,
         mine: p.mine,
+        unassigned: p.id === null,
         status: s,
         assigneeId: p.id,
         items: colTasks.filter((t) => (p.id === null ? !t.assignee : t.assignee?.id === p.id)),
       }))
-      .filter((g) => g.items.length > 0)
+      // Unzugewiesen immer zeigen (fester Ablageort, nichts geht unter); andere Personen nur mit Inhalt.
+      .filter((g) => g.items.length > 0 || g.unassigned)
     return { status: s, name: STATUS[s], items: colTasks, groups }
   })
 }
@@ -625,15 +627,16 @@ onBeforeUnmount(() => clearInterval(pollTimer))
               </div>
               <div class="space-y-3 min-h-[64px] overflow-y-auto pr-0.5">
                 <div v-for="g in col.groups" :key="g.key" class="dropgrp transition"
-                  :class="g.mine ? 'rounded-lg bg-coral/5 ring-1 ring-coral/15 p-1' : ''"
+                  :class="g.mine ? 'rounded-lg bg-coral/5 ring-1 ring-coral/15 p-1' : (g.unassigned ? 'rounded-lg bg-amber-50/60 ring-1 ring-amber-200/70 p-1' : '')"
                   @dragover.stop.prevent="($event.currentTarget as HTMLElement).classList.add('overg')"
                   @dragleave="($event.currentTarget as HTMLElement).classList.remove('overg')"
                   @drop.stop="($event.currentTarget as HTMLElement).classList.remove('overg'); onDropTo(g.status, g.assigneeId)">
                   <div class="flex items-center justify-between px-1 mb-1">
-                    <span class="text-[10px] font-semibold uppercase tracking-wide" :class="g.mine ? 'text-coral' : 'text-neutral-400'">{{ g.mine ? '📌 ' : '' }}{{ g.name }} <span class="text-neutral-300">·{{ g.items.length }}</span></span>
+                    <span class="text-[10px] font-semibold uppercase tracking-wide" :class="g.mine ? 'text-coral' : (g.unassigned && g.items.length ? 'text-amber-600' : 'text-neutral-400')">{{ g.mine ? '📌 ' : (g.unassigned && g.items.length ? '⚠ ' : '') }}{{ g.name }} <span class="text-neutral-300">·{{ g.items.length }}</span></span>
                     <button @click="openNewTask(g.status, g.assigneeId)" :title="`Aufgabe für ${g.name} anlegen`" class="w-4 h-4 grid place-items-center rounded text-neutral-300 hover:text-coral text-[14px] leading-none">+</button>
                   </div>
                   <div class="space-y-2">
+                    <div v-if="g.unassigned && !g.items.length" class="text-[10px] text-neutral-300 px-1 py-3 text-center border-2 border-dashed border-[#e6dad6] rounded-lg">keine · hierher ziehen</div>
                     <article v-for="t in g.items" :key="t.id" draggable="true"
                       @dragstart="dragId = t.id" @dragend="dragId = null"
                       @click="t.conversationId ? selectConv(t.conversationId) : selectTask(t)"
@@ -650,7 +653,6 @@ onBeforeUnmount(() => clearInterval(pollTimer))
                     </article>
                   </div>
                 </div>
-                <div v-if="!col.items.length" class="text-[11px] text-neutral-300 px-1 py-5 text-center border-2 border-dashed border-[#e6dad6] rounded-lg">leer · hierher ziehen</div>
               </div>
             </div>
           </div>
