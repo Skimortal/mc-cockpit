@@ -519,7 +519,7 @@ async function saveNewTask() {
   if (!nt.value.title.trim() || ntSaving.value) return
   ntSaving.value = true
   try {
-    await api.post('/api/tasks', {
+    await api.post('/api/board/tasks', {
       title: nt.value.title.trim(),
       description: nt.value.description.trim(),
       status: nt.value.status,

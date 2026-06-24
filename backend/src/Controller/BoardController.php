@@ -53,8 +53,8 @@ class BoardController extends AbstractController
         return $this->json(array_map(fn (Task $t) => $this->taskArr($t), $tasks));
     }
 
-    /** Manuelle Aufgabe ohne Mail-Bezug anlegen (volles Formular). */
-    #[Route('/api/tasks', methods: ['POST'])]
+    /** Manuelle Aufgabe ohne Mail-Bezug anlegen (volles Formular). Nicht /api/tasks – das belegt API Platform. */
+    #[Route('/api/board/tasks', methods: ['POST'])]
     public function createTask(Request $request, #[CurrentUser] ?User $user): JsonResponse
     {
         $d = json_decode($request->getContent(), true) ?: [];
