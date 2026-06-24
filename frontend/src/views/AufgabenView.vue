@@ -508,13 +508,19 @@ async function onDropTo(status: string, assigneeId?: number | null) {
   const t = tasks.value.find((x) => x.id === dragId.value)
   dragId.value = null
   if (!t) return
+  const changeStatus = t.status !== status
+  const changeAssignee = assigneeId !== undefined && (t.assignee?.id ?? null) !== assigneeId
+  if (!changeStatus && !changeAssignee) return
+  // Optimistisch lokal verschieben → sofortiges Feedback, ohne auf den Server zu warten.
+  if (changeStatus) t.status = status
+  if (changeAssignee) t.assignee = assigneeId == null ? null : (team.value.find((p) => p.id === assigneeId) ?? null)
   const calls: Promise<unknown>[] = []
-  if (t.status !== status) calls.push(api.post(`/api/tasks/${t.id}/status`, { status }))
-  if (assigneeId !== undefined && (t.assignee?.id ?? null) !== assigneeId) {
-    calls.push(api.post(`/api/tasks/${t.id}/assign`, { userId: assigneeId }))
-  }
-  if (calls.length) {
+  if (changeStatus) calls.push(api.post(`/api/tasks/${t.id}/status`, { status }))
+  if (changeAssignee) calls.push(api.post(`/api/tasks/${t.id}/assign`, { userId: assigneeId }))
+  try {
     await Promise.all(calls)
+  } finally {
+    // Mit dem Server abgleichen (Anzahl/Benachrichtigung/Posteingang).
     await Promise.all([loadBoard(), loadInbox()])
   }
 }
