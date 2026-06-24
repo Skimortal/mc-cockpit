@@ -85,7 +85,9 @@ final class ImapPoller
         try {
             $d = $message->getDate()?->first();
             if ($d) {
-                $date = new \DateTimeImmutable($d->format('c'));
+                // Nach UTC normalisieren – sonst speichert Doctrine die lokale Wanduhrzeit OHNE
+                // Offset (z. B. „09:46" aus „+0200"), und die Anzeige wäre 2 h daneben.
+                $date = (new \DateTimeImmutable($d->format('c')))->setTimezone(new \DateTimeZone('UTC'));
             }
         } catch (\Throwable) {
         }
