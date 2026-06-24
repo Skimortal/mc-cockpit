@@ -24,7 +24,7 @@ interface Task {
 }
 interface Att { id: number; name: string; size: number; type: string | null; pruned?: boolean }
 interface Msg { dir: string; who: string; to: string; time: string; body: string; attachments?: Att[] }
-interface ConvDetail { id: number; subject: string; customerName: string; customerEmail: string; taskId: number | null; messages: Msg[] }
+interface ConvDetail { id: number; subject: string; customerName: string; customerEmail: string; taskId: number | null; suggestedCompanyId: number | null; suggestedCompanyName: string | null; messages: Msg[] }
 
 const TAGS = ['Ausschreibung', 'Muster', 'Reklamation', 'Labor', 'Logistik', 'Rechnung', 'Etikett', 'ASN', 'Allgemein']
 const STATUS: Record<string, string> = { open: 'Offen', in_progress: 'In Arbeit', waiting: 'Wartet', done: 'Erledigt' }
@@ -204,6 +204,31 @@ function closePreview() {
   previewUrl.value = ''
   previewOpen.value = false
   previewAtt.value = null
+}
+
+// --- Anhang beim Kunden hinterlegen ---
+const depositOpen = ref(false)
+const depositAtt = ref<Att | null>(null)
+const depositCompanyId = ref<number | ''>('')
+const depositBusy = ref(false)
+const depositMsg = ref('')
+function openDeposit(a: Att) {
+  depositAtt.value = a
+  depositCompanyId.value = detail.value?.suggestedCompanyId ?? ''
+  depositMsg.value = ''
+  depositOpen.value = true
+}
+async function doDeposit() {
+  if (!depositAtt.value || depositCompanyId.value === '' || depositBusy.value) return
+  depositBusy.value = true
+  depositMsg.value = ''
+  try {
+    const { data } = await api.post(`/api/attachments/${depositAtt.value.id}/to-company`, { companyId: Number(depositCompanyId.value) })
+    depositMsg.value = '✓ Hinterlegt bei ' + (data.companyName || 'Kunde')
+    setTimeout(() => { depositOpen.value = false; depositAtt.value = null }, 1200)
+  } catch (e: any) {
+    depositMsg.value = '⚠️ ' + (e?.response?.data?.error || 'Hinterlegen fehlgeschlagen')
+  } finally { depositBusy.value = false }
 }
 function previewDownload() {
   if (previewAtt.value) downloadAttachment(previewAtt.value)
@@ -837,6 +862,9 @@ onBeforeUnmount(() => clearInterval(pollTimer))
                     <button @click="downloadAttachment(a)" title="Herunterladen" class="px-1.5 py-1 border-l border-[#efe4df] text-neutral-400 hover:text-coral shrink-0">
                       <Icon name="download" class="w-3.5 h-3.5" />
                     </button>
+                    <button @click="openDeposit(a)" title="Beim Kunden hinterlegen" class="px-1.5 py-1 border-l border-[#efe4df] text-neutral-400 hover:text-coral shrink-0">
+                      <Icon name="building" class="w-3.5 h-3.5" />
+                    </button>
                   </template>
                 </div>
               </div>
@@ -961,6 +989,36 @@ onBeforeUnmount(() => clearInterval(pollTimer))
           <span v-if="replyMsg" class="text-[11px] text-red-600">{{ replyMsg }}</span>
           <button @click="replyOpen = false" class="ml-auto text-[12px] px-3 py-1.5 rounded-lg text-neutral-600 hover:bg-beige">Abbrechen</button>
           <button @click="sendReply" :disabled="replyBusy || !replyText.trim() || !replyTo.trim()" class="text-[13px] px-4 py-1.5 rounded-lg bg-coral text-white font-medium disabled:opacity-50">{{ replyBusy ? 'Senden…' : (replyFileIds.length ? `✉️ Senden (${replyFileIds.length} Anh.)` : '✉️ Senden') }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Anhang beim Kunden hinterlegen -->
+    <div v-if="depositOpen" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" @click.self="depositOpen = false">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div class="flex items-center gap-2 px-5 py-3 border-b border-[#e6dad6]">
+          <Icon name="building" class="w-4 h-4 text-coral shrink-0" />
+          <span class="text-[14px] font-semibold text-navy">Beim Kunden hinterlegen</span>
+          <button @click="depositOpen = false" class="ml-auto text-neutral-400 hover:text-ebony text-2xl leading-none px-1">×</button>
+        </div>
+        <div class="px-5 py-4 space-y-3">
+          <div class="flex items-center gap-2 text-[12px] text-neutral-600 bg-beige-soft rounded-lg px-3 py-2">
+            <Icon name="paperclip" class="w-3.5 h-3.5 shrink-0 text-neutral-400" />
+            <span class="truncate">{{ depositAtt?.name }}</span>
+          </div>
+          <div>
+            <label class="text-[10px] uppercase tracking-wide text-neutral-400">Kunde</label>
+            <select v-model="depositCompanyId" class="mt-1 w-full border border-[#e0d2cd] rounded-lg px-2 py-2 text-[13px] bg-white">
+              <option value="">— Kunde wählen —</option>
+              <option v-for="co in companies" :key="co.id" :value="co.id">{{ co.name }}</option>
+            </select>
+            <div v-if="detail?.suggestedCompanyName" class="mt-1 text-[11px] text-neutral-400">Vorschlag aus dem Kontakt: {{ detail.suggestedCompanyName }}</div>
+          </div>
+          <div v-if="depositMsg" class="text-[12px]" :class="depositMsg.startsWith('⚠️') ? 'text-red-600' : 'text-green-700'">{{ depositMsg }}</div>
+        </div>
+        <div class="px-5 py-3 border-t border-[#e6dad6] flex items-center gap-2">
+          <button @click="depositOpen = false" class="ml-auto text-[12px] px-3 py-1.5 rounded-lg text-neutral-600 hover:bg-beige">Abbrechen</button>
+          <button @click="doDeposit" :disabled="depositBusy || depositCompanyId === ''" class="text-[13px] px-4 py-1.5 rounded-lg bg-coral text-white font-medium disabled:opacity-50">{{ depositBusy ? 'Hinterlegen…' : 'Hinterlegen' }}</button>
         </div>
       </div>
     </div>

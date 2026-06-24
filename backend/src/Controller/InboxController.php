@@ -3,14 +3,19 @@
 namespace App\Controller;
 
 use App\Entity\Attachment;
+use App\Entity\Company;
+use App\Entity\Contact;
 use App\Entity\Conversation;
+use App\Entity\Document;
 use App\Entity\Mailbox;
 use App\Entity\Task;
 use App\Entity\User;
 use App\Mail\ConversationThreader;
 use App\Mail\ImapPoller;
 use App\Service\Attachment\AttachmentConverter;
+use App\Service\Attachment\DocumentExtractor;
 use App\Service\Llm\LlmClient;
+use App\Service\Search\SearchIndexer;
 use App\Service\Triage\EmailTriageService;
 use App\Util\Tz;
 use Doctrine\ORM\EntityManagerInterface;
@@ -33,9 +38,26 @@ class InboxController extends AbstractController
         private readonly ImapPoller $poller,
         private readonly ConversationThreader $threader,
         private readonly AttachmentConverter $converter,
+        private readonly DocumentExtractor $extractor,
+        private readonly SearchIndexer $search,
         private readonly LlmClient $llm,
         #[Autowire('%kernel.project_dir%')] private readonly string $projectDir = '',
     ) {
+    }
+
+    /** Findet die zur externen Adresse passende Company (über einen Kontakt mit dieser E-Mail). */
+    private function companyForEmail(?string $email): ?Company
+    {
+        $email = trim((string) $email);
+        if ('' === $email) {
+            return null;
+        }
+        $contact = $this->em->getRepository(Contact::class)->createQueryBuilder('k')
+            ->where('LOWER(k.email) = :e')->setParameter('e', mb_strtolower($email))
+            ->andWhere('k.company IS NOT NULL')
+            ->setMaxResults(1)->getQuery()->getOneOrNullResult();
+
+        return $contact?->company;
     }
 
     /** Manueller Abruf der sichtbaren Postfächer (größeres Fenster, neueste zuerst). */
@@ -175,6 +197,8 @@ class InboxController extends AbstractController
             ];
         }
 
+        $suggested = $this->companyForEmail($c->customerEmail);
+
         return $this->json([
             'id' => $c->id,
             'subject' => $c->subject,
@@ -183,8 +207,68 @@ class InboxController extends AbstractController
             'mailboxId' => $c->mailbox?->id,
             'mailboxName' => $c->mailbox?->name,
             'taskId' => ($this->tasksByConversation()[$c->id] ?? null)?->id,
+            'suggestedCompanyId' => $suggested?->id,
+            'suggestedCompanyName' => $suggested?->name,
             'messages' => $messages,
         ]);
+    }
+
+    /** Einen E-Mail-Anhang als Dokument beim Kunden (Company) hinterlegen. */
+    #[Route('/api/attachments/{id}/to-company', methods: ['POST'])]
+    public function attachmentToCompany(Attachment $att, Request $request, #[CurrentUser] ?User $user): JsonResponse
+    {
+        $c = $att->email?->conversation;
+        if (!$c) {
+            return $this->json(['error' => 'Anhang nicht gefunden.'], 404);
+        }
+        $hasTask = isset($this->tasksByConversation()[$c->id]);
+        if (!$this->maySee($c, $user, $hasTask)) {
+            return $this->json(['error' => 'Kein Zugriff.'], 403);
+        }
+        if (null !== $att->prunedAt) {
+            return $this->json(['error' => 'Anhang wurde nach der Aufbewahrungsfrist entfernt – Original im Mail-Archiv.'], 410);
+        }
+        $src = $this->projectDir.'/var/attachments/'.$att->path;
+        if (!is_file($src)) {
+            return $this->json(['error' => 'Datei nicht vorhanden.'], 404);
+        }
+
+        $companyId = json_decode($request->getContent(), true)['companyId'] ?? null;
+        $company = $companyId ? $this->em->getRepository(Company::class)->find($companyId) : null;
+        if (!$company) {
+            return $this->json(['error' => 'Kein Kunde gewählt.'], 422);
+        }
+
+        $ext = strtoupper((string) (pathinfo((string) $att->filename, \PATHINFO_EXTENSION) ?: 'DATEI'));
+        $doc = new Document();
+        $doc->company = $company;
+        $doc->name = mb_substr((string) $att->filename, 0, 200);
+        $doc->type = mb_substr($ext, 0, 20);
+        $doc->contentType = mb_substr((string) ($att->contentType ?: 'application/octet-stream'), 0, 150);
+        $doc->size = (int) $att->size;
+        $this->em->persist($doc);
+        $this->em->flush(); // ID für den Pfad
+
+        $safe = mb_substr(trim((string) (preg_replace('/[^\w.\- ]+/u', '_', (string) $att->filename) ?: 'datei')), 0, 180);
+        $dir = $this->projectDir.'/var/documents/'.$company->id;
+        @mkdir($dir, 0775, true);
+        if (!@copy($src, $dir.'/'.$doc->id.'_'.$safe)) {
+            $this->em->remove($doc);
+            $this->em->flush();
+
+            return $this->json(['error' => 'Datei konnte nicht kopiert werden.'], 500);
+        }
+        $doc->path = $company->id.'/'.$doc->id.'_'.$safe;
+        $this->em->flush();
+
+        // Volltext extrahieren (Tika) bzw. zumindest indexieren.
+        if ($this->extractor->isExtractable($doc)) {
+            $this->extractor->extract($doc);
+        } else {
+            $this->search->indexDocument($doc);
+        }
+
+        return $this->json(['ok' => true, 'documentId' => $doc->id, 'companyId' => $company->id, 'companyName' => $company->name]);
     }
 
     #[Route('/api/conversations/{id}/to-task', methods: ['POST'])]
