@@ -147,6 +147,16 @@ class BoardController extends AbstractController
             return $this->json(['error' => 'E-Mail konnte nicht versendet werden (SMTP-Postfach/Passwort prüfen).'], 502);
         }
 
+        // Benachrichtigung als nachvollziehbaren Kommentar an der Aufgabe festhalten (Absender → Empfänger).
+        $actorName = $user ? (trim($user->getFirstName().' '.$user->getLastName()) ?: $user->getEmail()) : 'System';
+        $assigneeName = trim($task->assignee->getFirstName().' '.$task->assignee->getLastName()) ?: $task->assignee->getEmail();
+        $c = new TaskComment();
+        $c->task = $task;
+        $c->authorName = $actorName;
+        $c->body = '📧 → '.$assigneeName.($note ? ': '.$note : ' (benachrichtigt)');
+        $this->em->persist($c);
+        $this->em->flush();
+
         return $this->json(['ok' => true, 'to' => $task->assignee->getEmail()]);
     }
 

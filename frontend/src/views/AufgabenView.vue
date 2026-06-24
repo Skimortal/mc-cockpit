@@ -362,6 +362,7 @@ async function notifyAssignee(task: Task) {
   try {
     const { data } = await api.post(`/api/tasks/${task.id}/notify-assignee`, { message: r.message || '' })
     notifyMsg.value = '✓ E-Mail gesendet an ' + (data.to || 'Zuständigen')
+    await loadBoard() // Benachrichtigung erscheint als Kommentar
   } catch (e: any) {
     notifyMsg.value = '⚠️ ' + (e?.response?.data?.error || 'E-Mail fehlgeschlagen')
   } finally { notifying.value = false }
@@ -719,9 +720,9 @@ onBeforeUnmount(() => clearInterval(pollTimer))
 
               <!-- Kommentare / Anweisungen -->
               <div class="mt-3"><div class="text-[10px] uppercase tracking-wide text-neutral-400 mb-1">Kommentare / Anweisungen</div>
-                <div v-for="(k, i) in selTask.comments" :key="i" class="text-[11px] mb-1">
+                <div v-for="(k, i) in selTask.comments" :key="i" class="text-[11px] mb-1" :class="k.body.startsWith('📧') ? 'rounded-lg bg-navy/5 border border-navy/10 px-2 py-1' : ''">
                   <span class="font-semibold text-navy">{{ k.author }}</span> <span class="text-neutral-400">{{ k.createdAt.slice(5, 16) }}</span><br>
-                  <span class="text-neutral-600 whitespace-pre-wrap">{{ k.body }}</span>
+                  <span class="whitespace-pre-wrap" :class="k.body.startsWith('📧') ? 'text-navy' : 'text-neutral-600'">{{ k.body }}</span>
                 </div>
                 <div class="flex gap-1 mt-1">
                   <input v-model="commentText" placeholder="Kommentar / Anweisung…" @keyup.enter="addComment(selTask)" class="flex-1 border border-[#e0d2cd] rounded-lg px-2 py-1 text-[11px]" />
