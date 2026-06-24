@@ -233,6 +233,57 @@ async function doDeposit() {
 function previewDownload() {
   if (previewAtt.value) downloadAttachment(previewAtt.value)
 }
+
+// --- LPN-Assistent: aus der Lieferanten-Mail PO/MHD/Paletten lesen ---
+interface LpnGroup { mhdIso: string; verfallsd: string; charge: string; pallets: number }
+interface LpnPo { po: string; groups: LpnGroup[]; totalPallets: number; note: string | null; code: string }
+const lpnOpen = ref(false)
+const lpnBusy = ref(false)
+const lpnMsg = ref('')
+const lpnPos = ref<LpnPo[]>([])
+const lpnWarning = ref<string | null>(null)
+const lpnCompanyId = ref<number | ''>('')
+const lpnSuggestedName = ref<string | null>(null)
+const lpnCreating = ref(false)
+const lpnCopied = ref<string | null>(null)
+async function openLpn() {
+  if (!selConvId.value) return
+  lpnOpen.value = true
+  lpnBusy.value = true
+  lpnMsg.value = ''; lpnPos.value = []; lpnWarning.value = null; lpnCopied.value = null
+  try {
+    const { data } = await api.post(`/api/conversations/${selConvId.value}/lpn/prepare`)
+    lpnPos.value = data.pos || []
+    lpnWarning.value = data.warning || (data.actionable === false ? 'Diese Mail enthält keine eindeutigen LPN-Daten (PO + MHD + Paletten).' : null)
+    lpnCompanyId.value = data.suggestedCompanyId ?? (detail.value?.suggestedCompanyId ?? '')
+    lpnSuggestedName.value = data.suggestedCompanyName ?? detail.value?.suggestedCompanyName ?? null
+  } catch (e: any) {
+    lpnMsg.value = '⚠️ ' + (e?.response?.data?.error || 'LPN-Daten konnten nicht gelesen werden')
+  } finally { lpnBusy.value = false }
+}
+async function copyLpnCode(code: string) {
+  try { await navigator.clipboard.writeText(code); lpnCopied.value = code; setTimeout(() => { if (lpnCopied.value === code) lpnCopied.value = null }, 1500) } catch { /* ignore */ }
+}
+function lpnQtyHint(p: LpnPo): string {
+  return `Menge/LPN = Gesamt bestellt ÷ ${p.totalPallets}`
+}
+async function createLpnTasks() {
+  if (!selConvId.value || !lpnPos.value.length || lpnCreating.value) return
+  lpnCreating.value = true
+  lpnMsg.value = ''
+  try {
+    const { data } = await api.post(`/api/conversations/${selConvId.value}/lpn/task`, {
+      pos: lpnPos.value,
+      companyId: lpnCompanyId.value === '' ? null : Number(lpnCompanyId.value),
+    })
+    lpnMsg.value = `✓ ${data.created} Aufgabe(n) angelegt`
+    await loadBoard()
+    setTimeout(() => { lpnOpen.value = false }, 1200)
+  } catch (e: any) {
+    lpnMsg.value = '⚠️ ' + (e?.response?.data?.error || 'Aufgabe konnte nicht angelegt werden')
+  } finally { lpnCreating.value = false }
+}
+
 const fetching = ref(false)
 const fetchMsg = ref('')
 async function manualFetch() {
@@ -810,6 +861,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
                 <button @click="convertToTask" :disabled="converting || explaining" class="flex-1 py-2.5 rounded-xl bg-coral text-white text-sm font-medium hover:bg-coral-dark disabled:opacity-50">✨ In Aufgabe umwandeln</button>
                 <button @click="explainConv" :disabled="converting || explaining" class="px-3 py-2.5 rounded-xl border border-coral/40 text-coral text-sm font-medium hover:bg-coral/10 disabled:opacity-50 whitespace-nowrap">{{ explaining ? '🤔 …' : '🔎 KI erklärt' }}</button>
               </div>
+              <button @click="openLpn" :disabled="converting || explaining" class="mt-2 w-full py-2 rounded-xl border border-navy/30 text-navy text-[13px] font-medium hover:bg-navy/5 disabled:opacity-50 flex items-center justify-center gap-1.5"><Icon name="tag" class="w-3.5 h-3.5" /> LPN vorbereiten</button>
 
               <!-- Ladescreen: KI wandelt Mail in Aufgabe um -->
               <div v-if="converting" class="mt-3 flex items-center gap-3 p-4 rounded-xl bg-coral/5 border border-coral/20">
@@ -1019,6 +1071,69 @@ onBeforeUnmount(() => clearInterval(pollTimer))
         <div class="px-5 py-3 border-t border-[#e6dad6] flex items-center gap-2">
           <button @click="depositOpen = false" class="ml-auto text-[12px] px-3 py-1.5 rounded-lg text-neutral-600 hover:bg-beige">Abbrechen</button>
           <button @click="doDeposit" :disabled="depositBusy || depositCompanyId === ''" class="text-[13px] px-4 py-1.5 rounded-lg bg-coral text-white font-medium disabled:opacity-50">{{ depositBusy ? 'Hinterlegen…' : 'Hinterlegen' }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LPN vorbereiten -->
+    <div v-if="lpnOpen" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" @click.self="lpnOpen = false">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+        <div class="flex items-center gap-2 px-5 py-3 border-b border-[#e6dad6]">
+          <Icon name="tag" class="w-4 h-4 text-navy shrink-0" />
+          <span class="text-[14px] font-semibold text-navy">LPN vorbereiten</span>
+          <button @click="lpnOpen = false" class="ml-auto text-neutral-400 hover:text-ebony text-2xl leading-none px-1">×</button>
+        </div>
+        <div class="px-5 py-4 space-y-3 overflow-y-auto">
+          <div v-if="lpnBusy" class="flex items-center gap-3 p-3 rounded-xl bg-navy/5 border border-navy/15">
+            <span class="inline-block w-5 h-5 border-2 border-navy/30 border-t-navy rounded-full animate-spin shrink-0"></span>
+            <div class="text-[12.5px] text-navy"><b>KI liest die Lieferanten-Mail…</b><br><span class="text-neutral-500">PO-Nummer, MHD und Palettenzahl werden erkannt.</span></div>
+          </div>
+
+          <div v-if="!lpnBusy && lpnWarning" class="text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">⚠️ {{ lpnWarning }}</div>
+
+          <div v-for="(p, pi) in lpnPos" :key="pi" class="border border-[#e6dad6] rounded-xl overflow-hidden">
+            <div class="flex items-center gap-2 px-3 py-2 bg-beige-soft border-b border-[#efe4df]">
+              <span class="text-[12px] font-semibold text-ebony">PO {{ p.po }}</span>
+              <span class="text-[11px] text-neutral-500">{{ p.totalPallets }} Paletten</span>
+              <button @click="copyLpnCode(p.code)" class="ml-auto text-[11px] px-2 py-1 rounded-lg bg-navy/10 text-navy hover:bg-navy/20">{{ lpnCopied === p.code ? '✓ kopiert' : 'Manhattan-Code kopieren' }}</button>
+            </div>
+            <div class="px-3 py-2">
+              <div class="text-[10px] uppercase tracking-wide text-neutral-400 mb-1">{{ lpnQtyHint(p) }}</div>
+              <table class="w-full text-[12px]">
+                <thead>
+                  <tr class="text-[10px] uppercase tracking-wide text-neutral-400 text-left">
+                    <th class="font-medium pb-1">Paletten</th>
+                    <th class="font-medium pb-1">Verfallsd.</th>
+                    <th class="font-medium pb-1">Charge</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(g, gi) in p.groups" :key="gi" class="border-t border-[#f2eae6]">
+                    <td class="py-1 tabular-nums">{{ g.pallets }}</td>
+                    <td class="py-1 tabular-nums font-medium text-ebony">{{ g.verfallsd }}</td>
+                    <td class="py-1 tabular-nums">{{ g.charge }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-if="p.note" class="mt-2 text-[11px] text-neutral-500 italic">„{{ p.note }}"</div>
+              <div class="mt-2 text-[11px] text-neutral-400">Dateiname: <span class="tabular-nums">{{ p.po }}_&lt;Ziel&gt;_{{ p.groups[0]?.charge }}.pdf</span></div>
+            </div>
+          </div>
+
+          <div v-if="!lpnBusy && lpnPos.length">
+            <label class="text-[10px] uppercase tracking-wide text-neutral-400">Kunde (Aufgabe wird dort angezeigt)</label>
+            <select v-model="lpnCompanyId" class="mt-1 w-full border border-[#e0d2cd] rounded-lg px-2 py-2 text-[13px] bg-white">
+              <option value="">— Kunde wählen —</option>
+              <option v-for="co in companies" :key="co.id" :value="co.id">{{ co.name }}</option>
+            </select>
+            <div v-if="lpnSuggestedName" class="mt-1 text-[11px] text-neutral-400">Vorschlag aus dem Kontakt: {{ lpnSuggestedName }}</div>
+          </div>
+
+          <div v-if="lpnMsg" class="text-[12px]" :class="lpnMsg.startsWith('⚠️') ? 'text-red-600' : 'text-green-700'">{{ lpnMsg }}</div>
+        </div>
+        <div class="px-5 py-3 border-t border-[#e6dad6] flex items-center gap-2">
+          <button @click="lpnOpen = false" class="text-[12px] px-3 py-1.5 rounded-lg text-neutral-600 hover:bg-beige">Schließen</button>
+          <button @click="createLpnTasks" :disabled="lpnCreating || lpnBusy || !lpnPos.length" class="ml-auto text-[13px] px-4 py-1.5 rounded-lg bg-coral text-white font-medium disabled:opacity-50">{{ lpnCreating ? 'Anlegen…' : 'Aufgabe(n) anlegen' }}</button>
         </div>
       </div>
     </div>

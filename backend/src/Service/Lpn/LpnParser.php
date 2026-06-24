@@ -1,0 +1,177 @@
+<?php
+
+namespace App\Service\Lpn;
+
+use App\Entity\Email;
+use App\Service\Llm\LlmClient;
+
+/**
+ * Liest aus einer Lieferanten-Mail (Radenko/Mladegs) die LPN-Daten:
+ * PO-Nummer(n) + je PO die MHD-Gruppen mit Palettenzahl. Die Mengen/das Ziel
+ * stehen NICHT in der Mail, sondern später im Manhattan-Portal.
+ */
+final class LpnParser
+{
+    public function __construct(private readonly LlmClient $llm)
+    {
+    }
+
+    /**
+     * @return array{pos: list<array<string,mixed>>, actionable: bool, warning: ?string}
+     */
+    public function parse(Email $email): array
+    {
+        $data = $this->llm->extract($this->system(), $this->userText($email), $this->schema(), null, 1200);
+
+        $pos = [];
+        foreach ((array) ($data['pos'] ?? []) as $p) {
+            $po = preg_replace('/\D+/', '', (string) ($p['po'] ?? ''));
+            if ('' === $po) {
+                continue;
+            }
+            $groups = [];
+            $total = 0;
+            foreach ((array) ($p['groups'] ?? []) as $g) {
+                $d = $this->date((string) ($g['mhd'] ?? ''));
+                $pallets = (int) ($g['pallets'] ?? 0);
+                if (!$d || $pallets <= 0) {
+                    continue;
+                }
+                $groups[] = [
+                    'mhdIso' => $d->format('Y-m-d'),
+                    'verfallsd' => $d->format('d.m.y'), // Manhattan-Feld „Verfallsd."  -> 22.06.28
+                    'charge' => $d->format('dmY'),      // Manhattan-Feld „Charge" + Dateiname -> 22062028
+                    'pallets' => $pallets,
+                ];
+                $total += $pallets;
+            }
+            if (!$groups) {
+                continue;
+            }
+            $pos[] = [
+                'po' => $po,
+                'groups' => $groups,
+                'totalPallets' => $total,
+                'note' => isset($p['note']) && '' !== trim((string) $p['note']) ? (string) $p['note'] : null,
+                // Kompakter Code für den Browser-Helfer (Baustein 2): Ziel/Menge holt er live aus dem Portal.
+                'code' => json_encode([
+                    'v' => 1,
+                    'po' => $po,
+                    'groups' => array_map(static fn ($g) => ['mhd' => $g['mhdIso'], 'pallets' => $g['pallets']], $groups),
+                ], \JSON_UNESCAPED_SLASHES),
+            ];
+        }
+
+        return [
+            'pos' => $pos,
+            'actionable' => (bool) ($data['actionable'] ?? !empty($pos)),
+            'warning' => isset($data['warning']) && '' !== trim((string) $data['warning']) ? (string) $data['warning'] : null,
+        ];
+    }
+
+    private function date(string $raw): ?\DateTimeImmutable
+    {
+        $raw = trim($raw);
+        if ('' === $raw) {
+            return null;
+        }
+        foreach (['!Y-m-d', '!d.m.Y', '!d.m.y', '!d/m/Y', '!d/m/y'] as $fmt) {
+            $d = \DateTimeImmutable::createFromFormat($fmt, $raw);
+            if ($d instanceof \DateTimeImmutable) {
+                return $d;
+            }
+        }
+        try {
+            return new \DateTimeImmutable($raw);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function userText(Email $email): string
+    {
+        $body = $email->bodyText ?: strip_tags((string) $email->bodyHtml);
+        // Zitierte Vorgängermails abschneiden – Radenkos eigentliche Anweisung steht oben.
+        foreach (["\nFrom:", "\nVon:", "\n-----Original", "\nAm "] as $marker) {
+            $pos = mb_strpos($body, $marker);
+            if (false !== $pos && $pos > 40) {
+                $body = mb_substr($body, 0, $pos);
+            }
+        }
+        $body = mb_substr(trim($body), 0, 3000);
+
+        return sprintf(
+            "Von: %s\nBetreff: %s\n\n%s",
+            $email->fromAddress ?? '?',
+            $email->subject ?? '(kein Betreff)',
+            $body
+        );
+    }
+
+    private function system(): string
+    {
+        return <<<'TXT'
+            Du extrahierst aus einer Lieferanten-E-Mail die Daten zum Erstellen von LPN-Etiketten
+            (Manhattan-Lagerportal). Der Absender (oft Radenko Marinković / Mladegs Pak) schreibt
+            meist kurz auf Bosnisch/Serbisch oder Deutsch.
+
+            Du brauchst pro Bestellung (PO):
+            - po: die PO-/Bestellnummer. Sie steht im FLIESSTEXT der neuesten Nachricht (lange Zahl,
+              meist ~10 Stellen, oft mit 45… beginnend). NICHT aus dem Betreff nehmen – der ist oft
+              eine alte PO aus zitierten Antworten. Gibt der Text keine PO her: po = null.
+            - groups: eine oder mehrere MHD-Gruppen. Jede Gruppe hat:
+                - mhd: das Mindesthaltbarkeitsdatum als ISO YYYY-MM-DD.
+                - pallets: Anzahl Paletten dieser MHD (Wörter: paleta/palete/paletten/pal).
+              Beispiele:
+                „02.06.2028. svih 11 paleta."  -> 1 Gruppe: mhd 2028-06-02, pallets 11.
+                „5 paleta 02.06.28 i 6 paleta 10.07.28" -> 2 Gruppen.
+              Meist sind es insgesamt 11 Paletten.
+
+            Regeln:
+            - Nur Daten verwenden, die wirklich dastehen. Nichts erfinden.
+            - actionable = false, wenn die Mail KEINE konkreten LPN-Daten (PO + MHD + Paletten) enthält
+              (z. B. reine Rückfrage, Weiterleitung ohne Angaben).
+            - warning: kurzer deutscher Hinweis, falls etwas unklar/unvollständig ist (z. B. „keine PO im
+              Text gefunden", „Palettenzahl fehlt"), sonst null.
+            Antworte ausschließlich im vorgegebenen JSON-Schema.
+            TXT;
+    }
+
+    /** @return array<string,mixed> */
+    private function schema(): array
+    {
+        return [
+            'type' => 'object',
+            'additionalProperties' => false,
+            'properties' => [
+                'pos' => [
+                    'type' => 'array',
+                    'items' => [
+                        'type' => 'object',
+                        'additionalProperties' => false,
+                        'properties' => [
+                            'po' => ['type' => ['string', 'null']],
+                            'groups' => [
+                                'type' => 'array',
+                                'items' => [
+                                    'type' => 'object',
+                                    'additionalProperties' => false,
+                                    'properties' => [
+                                        'mhd' => ['type' => 'string'],
+                                        'pallets' => ['type' => 'integer'],
+                                    ],
+                                    'required' => ['mhd', 'pallets'],
+                                ],
+                            ],
+                            'note' => ['type' => ['string', 'null']],
+                        ],
+                        'required' => ['po', 'groups'],
+                    ],
+                ],
+                'actionable' => ['type' => 'boolean'],
+                'warning' => ['type' => ['string', 'null']],
+            ],
+            'required' => ['pos', 'actionable'],
+        ];
+    }
+}

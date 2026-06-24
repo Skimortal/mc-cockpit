@@ -333,6 +333,7 @@ class CompanyController extends AbstractController
         $taskOut = array_map(fn (Task $t) => [
             'id' => $t->id,
             'title' => $t->title,
+            'type' => $t->type,
             'status' => $t->status,
             'conversationId' => $t->conversation?->id,
             'dueDate' => $t->dueDate?->format('Y-m-d'),
