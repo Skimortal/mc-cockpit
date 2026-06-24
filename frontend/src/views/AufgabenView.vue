@@ -33,6 +33,18 @@ const PRIO: Record<string, string> = { high: 'Hoch', normal: 'Normal', low: 'Nie
 const PRIO_KEYS = ['high', 'normal', 'low']
 function prioStyle(p: string) { return p === 'high' ? 'background:#eb5d4f' : p === 'low' ? 'background:#9aa7b8' : 'background:#414c65' }
 
+// Farbtöne je Personengruppe im Board – klare visuelle Trennung. Pro Person stabil (über Team-Reihenfolge).
+const MINE_TINT = { box: 'bg-coral/5 ring-coral/20', head: 'text-coral' }
+const UNASSIGNED_TINT = { box: 'bg-amber-50/70 ring-amber-200/70', head: 'text-amber-600' }
+const PERSON_PALETTE = [
+  { box: 'bg-sky-50/70 ring-sky-200/80', head: 'text-sky-700' },
+  { box: 'bg-emerald-50/70 ring-emerald-200/80', head: 'text-emerald-700' },
+  { box: 'bg-violet-50/70 ring-violet-200/80', head: 'text-violet-700' },
+  { box: 'bg-rose-50/70 ring-rose-200/80', head: 'text-rose-700' },
+  { box: 'bg-teal-50/70 ring-teal-200/80', head: 'text-teal-700' },
+  { box: 'bg-indigo-50/70 ring-indigo-200/80', head: 'text-indigo-700' },
+]
+
 const mailboxes = ref<Mailbox[]>([])
 const mailboxFilter = ref<string>('') // '' = alle | mailbox id
 const inboxFilter = ref<'alle' | 'neu'>('alle')
@@ -91,6 +103,7 @@ function statusColumns() {
     ...team.value.filter((p) => p.id !== meId).map((p) => ({ id: p.id, name: p.name, mine: false })),
     { id: null, name: 'Unzugewiesen', mine: false },
   ]
+  const teamIndex = new Map(team.value.map((p, i) => [p.id, i]))
   return STATUS_KEYS.filter((s) => s !== 'done' || showDone.value).map((s) => {
     const colTasks = active.filter((t) => t.status === s)
     const groups = people
@@ -101,6 +114,7 @@ function statusColumns() {
         unassigned: p.id === null,
         status: s,
         assigneeId: p.id,
+        tint: p.mine ? MINE_TINT : (p.id === null ? UNASSIGNED_TINT : PERSON_PALETTE[(teamIndex.get(p.id) ?? 0) % PERSON_PALETTE.length]),
         items: colTasks.filter((t) => (p.id === null ? !t.assignee : t.assignee?.id === p.id)),
       }))
       // Unzugewiesen immer zeigen (fester Ablageort, nichts geht unter); andere Personen nur mit Inhalt.
@@ -626,13 +640,13 @@ onBeforeUnmount(() => clearInterval(pollTimer))
                 </div>
               </div>
               <div class="space-y-3 min-h-[64px] overflow-y-auto pr-0.5">
-                <div v-for="g in col.groups" :key="g.key" class="dropgrp transition"
-                  :class="g.mine ? 'rounded-lg bg-coral/5 ring-1 ring-coral/15 p-1' : (g.unassigned ? 'rounded-lg bg-amber-50/60 ring-1 ring-amber-200/70 p-1' : '')"
+                <div v-for="g in col.groups" :key="g.key" class="dropgrp transition rounded-lg ring-1 p-1"
+                  :class="g.tint.box"
                   @dragover.stop.prevent="($event.currentTarget as HTMLElement).classList.add('overg')"
                   @dragleave="($event.currentTarget as HTMLElement).classList.remove('overg')"
                   @drop.stop="($event.currentTarget as HTMLElement).classList.remove('overg'); onDropTo(g.status, g.assigneeId)">
                   <div class="flex items-center justify-between px-1 mb-1">
-                    <span class="text-[10px] font-semibold uppercase tracking-wide" :class="g.mine ? 'text-coral' : (g.unassigned && g.items.length ? 'text-amber-600' : 'text-neutral-400')">{{ g.mine ? '📌 ' : (g.unassigned && g.items.length ? '⚠ ' : '') }}{{ g.name }} <span class="text-neutral-300">·{{ g.items.length }}</span></span>
+                    <span class="text-[10px] font-semibold uppercase tracking-wide" :class="g.tint.head">{{ g.mine ? '📌 ' : (g.unassigned && g.items.length ? '⚠ ' : '') }}{{ g.name }} <span class="opacity-50">·{{ g.items.length }}</span></span>
                     <button @click="openNewTask(g.status, g.assigneeId)" :title="`Aufgabe für ${g.name} anlegen`" class="w-4 h-4 grid place-items-center rounded text-neutral-300 hover:text-coral text-[14px] leading-none">+</button>
                   </div>
                   <div class="space-y-2">
