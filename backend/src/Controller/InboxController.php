@@ -185,7 +185,7 @@ class InboxController extends AbstractController
         foreach ($c->emails as $e) {
             $atts = [];
             foreach ($attRepo->findBy(['email' => $e], ['id' => 'ASC']) as $a) {
-                $atts[] = ['id' => $a->id, 'name' => $a->filename, 'size' => $a->size, 'type' => $a->contentType, 'pruned' => null !== $a->prunedAt];
+                $atts[] = ['id' => $a->id, 'name' => ImapPoller::mimeDecode((string) $a->filename), 'size' => $a->size, 'type' => $a->contentType, 'pruned' => null !== $a->prunedAt];
             }
             $messages[] = [
                 'dir' => $e->direction,
@@ -239,17 +239,18 @@ class InboxController extends AbstractController
             return $this->json(['error' => 'Kein Kunde gewählt.'], 422);
         }
 
-        $ext = strtoupper((string) (pathinfo((string) $att->filename, \PATHINFO_EXTENSION) ?: 'DATEI'));
+        $fname = ImapPoller::mimeDecode((string) $att->filename);
+        $ext = strtoupper((string) (pathinfo($fname, \PATHINFO_EXTENSION) ?: 'DATEI'));
         $doc = new Document();
         $doc->company = $company;
-        $doc->name = mb_substr((string) $att->filename, 0, 200);
+        $doc->name = mb_substr($fname, 0, 200);
         $doc->type = mb_substr($ext, 0, 20);
         $doc->contentType = mb_substr((string) ($att->contentType ?: 'application/octet-stream'), 0, 150);
         $doc->size = (int) $att->size;
         $this->em->persist($doc);
         $this->em->flush(); // ID für den Pfad
 
-        $safe = mb_substr(trim((string) (preg_replace('/[^\w.\- ]+/u', '_', (string) $att->filename) ?: 'datei')), 0, 180);
+        $safe = mb_substr(trim((string) (preg_replace('/[^\w.\- ]+/u', '_', $fname) ?: 'datei')), 0, 180);
         $dir = $this->projectDir.'/var/documents/'.$company->id;
         @mkdir($dir, 0775, true);
         if (!@copy($src, $dir.'/'.$doc->id.'_'.$safe)) {

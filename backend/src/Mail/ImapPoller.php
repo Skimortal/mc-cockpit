@@ -104,7 +104,7 @@ final class ImapPoller
             $i = 0;
             $tmpDir = sys_get_temp_dir().'/cockpit-att';
             foreach ($message->getAttachments() as $att) {
-                $name = $this->str($att->getName());
+                $name = self::mimeDecode($this->str($att->getName()));
                 $mime = (string) ($att->getMimeType() ?: 'application/octet-stream');
                 // Krypto-Signaturen (S/MIME, PGP) sind kein echter Inhalt -> überspringen.
                 if ('smime.p7s' === $name || str_contains($mime, 'pkcs7') || str_contains($mime, 'pgp-signature')) {
