@@ -117,8 +117,7 @@ function statusColumns() {
         tint: p.mine ? MINE_TINT : (p.id === null ? UNASSIGNED_TINT : PERSON_PALETTE[(teamIndex.get(p.id) ?? 0) % PERSON_PALETTE.length]),
         items: colTasks.filter((t) => (p.id === null ? !t.assignee : t.assignee?.id === p.id)),
       }))
-      // Unzugewiesen immer zeigen (fester Ablageort, nichts geht unter); andere Personen nur mit Inhalt.
-      .filter((g) => g.items.length > 0 || g.unassigned)
+      // Alle Personenbereiche immer zeigen – feste, farbige Drop-Ziele zum Reinschieben.
     return { status: s, name: STATUS[s], items: colTasks, groups }
   })
 }
@@ -650,7 +649,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
                     <button @click="openNewTask(g.status, g.assigneeId)" :title="`Aufgabe für ${g.name} anlegen`" class="w-4 h-4 grid place-items-center rounded text-neutral-300 hover:text-coral text-[14px] leading-none">+</button>
                   </div>
                   <div class="space-y-2">
-                    <div v-if="g.unassigned && !g.items.length" class="text-[10px] text-neutral-300 px-1 py-3 text-center border-2 border-dashed border-[#e6dad6] rounded-lg">keine · hierher ziehen</div>
+                    <div v-if="!g.items.length" class="text-[10px] text-neutral-300 px-1 py-2.5 text-center border border-dashed border-[#d8c7c1] rounded-lg">hierher ziehen</div>
                     <article v-for="t in g.items" :key="t.id" draggable="true"
                       @dragstart="dragId = t.id" @dragend="dragId = null"
                       @click="t.conversationId ? selectConv(t.conversationId) : selectTask(t)"
