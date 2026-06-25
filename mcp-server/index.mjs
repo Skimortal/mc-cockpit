@@ -24,6 +24,24 @@ async function login() {
   token = (await res.json()).token
 }
 
+// Lädt eine Datei binär (mit Login/Token-Refresh wie api()), gibt Content-Type + Buffer zurück.
+async function fetchBinary(path) {
+  if (!token) await login()
+  const build = () => ({ method: 'GET', headers: { Authorization: `Bearer ${token}` } })
+  let res = await fetch(`${BASE}${path}`, build())
+  if (res.status === 401) {
+    await login()
+    res = await fetch(`${BASE}${path}`, build())
+  }
+  if (!res.ok) {
+    const t = await res.text().catch(() => '')
+    throw new Error(`GET ${path} → HTTP ${res.status}: ${t}`)
+  }
+  const contentType = (res.headers.get('content-type') || 'application/octet-stream').split(';')[0].trim()
+  const buf = Buffer.from(await res.arrayBuffer())
+  return { contentType, buf }
+}
+
 async function api(path, method = 'GET', body) {
   if (!token) await login()
   const build = () => {
@@ -127,6 +145,37 @@ tool('cockpit_add_company_field', 'Fügt einem Kunden ein frei definierbares Sta
 tool('cockpit_add_company_contact', 'Fügt einem Kunden einen Ansprechpartner hinzu.',
   { id: z.number(), department: z.string(), name: z.string(), email: z.string().optional(), phone: z.string().optional() },
   ({ id, department, name, email, phone }) => api(`/api/companies/${id}/contacts`, 'POST', { department, name, email, phone }))
+
+// ---- Dokumente herunterladen ----
+// Über dieses Limit (Rohgröße) wird die Datei nicht eingebettet – sonst sprengt sie den Kontext.
+const MAX_DOC_BYTES = 12 * 1024 * 1024
+
+server.tool(
+  'cockpit_get_document',
+  'Lädt eine im Cockpit hinterlegte Datei (PDF, Bild, …) anhand ihrer Dokument-ID herunter und übergibt sie Claude zum Lesen – z. B. ein PDF-Datenblatt oder Angebot. Die ID stammt aus cockpit_company (Feld documents[].id).',
+  { id: z.number() },
+  async ({ id }) => {
+    const { contentType, buf } = await fetchBinary(`/api/documents/${id}/download`)
+    if (buf.length > MAX_DOC_BYTES) {
+      const mb = (n) => (n / 1024 / 1024).toFixed(1)
+      return { content: [{ type: 'text', text: `Datei (#${id}) ist ${mb(buf.length)} MB groß – zu groß, um sie hier einzubetten (Limit ${mb(MAX_DOC_BYTES)} MB).` }] }
+    }
+    const b64 = buf.toString('base64')
+    if (contentType.startsWith('image/')) {
+      return { content: [{ type: 'image', data: b64, mimeType: contentType }] }
+    }
+    return {
+      content: [{
+        type: 'resource',
+        resource: {
+          uri: `cockpit://documents/${id}`,
+          mimeType: contentType || 'application/pdf',
+          blob: b64,
+        },
+      }],
+    }
+  },
+)
 
 const transport = new StdioServerTransport()
 await server.connect(transport)

@@ -54,12 +54,14 @@ für den Besitzer; Aufgaben für alle).
 | `cockpit_create_company` / `cockpit_update_company` | Kunde anlegen / aktualisieren |
 | `cockpit_add_company_field` | Stammdaten-Feld hinzufügen (z. B. Steuernummer) |
 | `cockpit_add_company_contact` | Ansprechpartner hinzufügen |
+| `cockpit_get_document` | Datei (PDF/Bild) eines Kunden herunterladen und an Claude zum Lesen übergeben |
 
 ## Beispiele (in Claude Desktop)
 - „Such mir alle Mails zu Hofer und zeig die offenen Aufgaben dazu."
 - „Mach aus Konversation 12 eine Aufgabe und weise sie Mirjana zu."
 - „Entwirf eine Antwort auf Aufgabe 8 und zeig sie mir, bevor wir senden."
 - „Trag bei Mladegs die Steuernummer ATU… als Feld ein."
+- „Hol das englische Datenblatt-PDF von Kunde X und fass es zusammen."
 
 ## Sicherheit
 Das Passwort steht aktuell in der lokalen Claude-Desktop-Konfiguration (nur auf deinem Rechner).
