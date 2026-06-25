@@ -465,7 +465,7 @@
 
   const css = document.createElement('style');
   css.textContent = `
-    #lpnh{position:fixed;top:64px;right:16px;z-index:2147483647;width:312px;background:#fff;border:1px solid #d8cdc8;border-radius:12px;
+    #lpnh{position:fixed;bottom:16px;right:16px;z-index:2147483647;width:312px;background:#fff;border:1px solid #d8cdc8;border-radius:12px;
       box-shadow:0 10px 30px rgba(0,0,0,.25);font:12px/1.45 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#2a2320}
     #lpnh .hd{display:flex;align-items:center;gap:6px;padding:8px 10px;background:#414c65;color:#fff;border-radius:12px 12px 0 0;cursor:move}
     #lpnh .bd{padding:10px;display:flex;flex-direction:column;gap:8px;max-height:78vh;overflow:auto}
@@ -493,7 +493,7 @@
   const box = document.createElement('div');
   box.id = 'lpnh';
   box.innerHTML = `
-    <div class="hd"><b>🏷️ LPN-Helfer</b><span style="font-size:10px;opacity:.7">v0.23 · Extension</span><span class="x" id="lpnh-x">×</span></div>
+    <div class="hd"><b>🏷️ LPN-Helfer</b><span style="font-size:10px;opacity:.7">v0.24 · Extension</span><span class="x" id="lpnh-x">×</span></div>
     <div class="bd">
       <details id="lpnh-set"><summary>🔑 Login (lokal gespeichert)</summary>
         <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
