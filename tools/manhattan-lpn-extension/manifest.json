@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "MOST Connect – LPN-Helfer (Manhattan)",
+  "version": "0.23",
+  "description": "Autopilot für die Manhattan LPN-Erstellung. Füllt die Maske und stoppt vor dem Speichern/Drucken.",
+  "permissions": ["storage"],
+  "host_permissions": ["*://*.aldi-sued.com/*"],
+  "content_scripts": [
+    {
+      "matches": ["*://*.aldi-sued.com/*"],
+      "all_frames": true,
+      "run_at": "document_idle",
+      "world": "MAIN",
+      "js": ["src/page-bridge.js"]
+    },
+    {
+      "matches": ["*://*.aldi-sued.com/*"],
+      "all_frames": true,
+      "run_at": "document_idle",
+      "js": ["src/content.js"]
+    }
+  ]
+}
