@@ -5,6 +5,11 @@
   "description": "Autopilot für die Manhattan LPN-Erstellung. Füllt die Maske und stoppt vor dem Speichern/Drucken.",
   "permissions": ["storage"],
   "host_permissions": ["*://*.aldi-sued.com/*"],
+  "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "action": {
+    "default_title": "LPN-Helfer",
+    "default_icon": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+  },
   "content_scripts": [
     {
       "matches": ["*://*.aldi-sued.com/*"],
