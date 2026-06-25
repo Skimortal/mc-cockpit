@@ -6,6 +6,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
+import { writeFile, mkdir } from 'node:fs/promises'
+import { existsSync, statSync } from 'node:fs'
+import { dirname, resolve, join } from 'node:path'
+import { tmpdir } from 'node:os'
 
 const BASE = (process.env.COCKPIT_URL || 'http://localhost:8090').replace(/\/$/, '')
 const EMAIL = process.env.COCKPIT_EMAIL
@@ -184,24 +188,35 @@ function withExt(name, type, contentType) {
   return ext ? `${name}.${ext}` : name
 }
 
+// Base64 inline geht nur bis ~1 MB Tool-Response. Darüber speichern wir die Datei lokal
+// und geben nur den Pfad zurück (imap_save_draft akzeptiert einen path-Parameter).
+const INLINE_MAX_BYTES = 700 * 1024
+
 tool(
   'cockpit_get_document_file',
-  'Gibt eine im Cockpit hinterlegte Datei als Base64-String zurück (Felder: filename, contentType, size, base64) – zum Weiterverwenden als E-Mail-Anhang (z. B. imap_save_draft). Zum reinen Lesen/Zusammenfassen besser cockpit_get_document verwenden. ID aus cockpit_company (documents[].id).',
-  { id: z.number() },
-  async ({ id }) => {
+  'Liefert eine im Cockpit hinterlegte Datei zum Anhängen an eine E-Mail (z. B. imap_save_draft). Ohne savePath: kleine Dateien als base64 (Felder filename/contentType/size/base64). Mit savePath (lokaler Datei- oder Ordnerpfad): speichert die Datei dort und gibt nur den path zurück – nötig für große Dateien (>~0,7 MB), die nicht als base64 durch den Chat passen. ID aus cockpit_company (documents[].id). Zum reinen Lesen/Zusammenfassen besser cockpit_get_document.',
+  { id: z.number(), savePath: z.string().optional() },
+  async ({ id, savePath }) => {
     const meta = await api(`/api/documents/${id}/text`).catch(() => ({}))
     const { contentType, buf } = await fetchBinary(`/api/documents/${id}/download`)
-    if (buf.length > MAX_DOC_BYTES) {
-      const mb = (n) => (n / 1024 / 1024).toFixed(1)
-      throw new Error(`Datei #${id} ist ${mb(buf.length)} MB groß – zu groß für die Base64-Übergabe (Limit ${mb(MAX_DOC_BYTES)} MB).`)
+    const filename = withExt(String(meta?.name || `dokument-${id}`), meta?.type, contentType)
+
+    // Zielpfad: expliziter savePath, sonst Temp-Ordner falls die Datei für base64 zu groß ist.
+    let target = null
+    if (savePath) {
+      target = resolve(savePath)
+      if (existsSync(target) && statSync(target).isDirectory()) target = join(target, filename)
+    } else if (buf.length > INLINE_MAX_BYTES) {
+      target = join(tmpdir(), `cockpit-${id}-${filename}`)
     }
-    return {
-      id,
-      filename: withExt(String(meta?.name || `dokument-${id}`), meta?.type, contentType),
-      contentType,
-      size: buf.length,
-      base64: buf.toString('base64'),
+
+    if (target) {
+      await mkdir(dirname(target), { recursive: true })
+      await writeFile(target, buf)
+      return { id, filename, contentType, size: buf.length, path: target }
     }
+
+    return { id, filename, contentType, size: buf.length, base64: buf.toString('base64') }
   },
 )
 

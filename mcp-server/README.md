@@ -55,7 +55,7 @@ für den Besitzer; Aufgaben für alle).
 | `cockpit_add_company_field` | Stammdaten-Feld hinzufügen (z. B. Steuernummer) |
 | `cockpit_add_company_contact` | Ansprechpartner hinzufügen |
 | `cockpit_get_document` | Datei-Inhalt (PDF/Office) als Text zum Lesen/Zusammenfassen; Bilder als Bild |
-| `cockpit_get_document_file` | Datei als Base64 (filename/contentType/size/base64) – z. B. als E-Mail-Anhang |
+| `cockpit_get_document_file` | Datei für E-Mail-Anhang: klein → base64, mit `savePath` (oder >0,7 MB) → lokal speichern, gibt `path` zurück |
 
 ## Beispiele (in Claude Desktop)
 - „Such mir alle Mails zu Hofer und zeig die offenen Aufgaben dazu."
