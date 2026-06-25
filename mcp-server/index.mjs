@@ -176,5 +176,34 @@ server.tool(
   },
 )
 
+// Hängt eine sinnvolle Dateiendung an, falls der Dokumentname keine hat (für Anhang-Dateinamen).
+function withExt(name, type, contentType) {
+  if (/\.[a-z0-9]{2,5}$/i.test(name)) return name
+  const map = { 'application/pdf': 'pdf', 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif' }
+  const ext = map[contentType] || (type ? String(type).toLowerCase() : '')
+  return ext ? `${name}.${ext}` : name
+}
+
+tool(
+  'cockpit_get_document_file',
+  'Gibt eine im Cockpit hinterlegte Datei als Base64-String zurück (Felder: filename, contentType, size, base64) – zum Weiterverwenden als E-Mail-Anhang (z. B. imap_save_draft). Zum reinen Lesen/Zusammenfassen besser cockpit_get_document verwenden. ID aus cockpit_company (documents[].id).',
+  { id: z.number() },
+  async ({ id }) => {
+    const meta = await api(`/api/documents/${id}/text`).catch(() => ({}))
+    const { contentType, buf } = await fetchBinary(`/api/documents/${id}/download`)
+    if (buf.length > MAX_DOC_BYTES) {
+      const mb = (n) => (n / 1024 / 1024).toFixed(1)
+      throw new Error(`Datei #${id} ist ${mb(buf.length)} MB groß – zu groß für die Base64-Übergabe (Limit ${mb(MAX_DOC_BYTES)} MB).`)
+    }
+    return {
+      id,
+      filename: withExt(String(meta?.name || `dokument-${id}`), meta?.type, contentType),
+      contentType,
+      size: buf.length,
+      base64: buf.toString('base64'),
+    }
+  },
+)
+
 const transport = new StdioServerTransport()
 await server.connect(transport)

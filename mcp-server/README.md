@@ -54,7 +54,8 @@ für den Besitzer; Aufgaben für alle).
 | `cockpit_create_company` / `cockpit_update_company` | Kunde anlegen / aktualisieren |
 | `cockpit_add_company_field` | Stammdaten-Feld hinzufügen (z. B. Steuernummer) |
 | `cockpit_add_company_contact` | Ansprechpartner hinzufügen |
-| `cockpit_get_document` | Datei (PDF/Bild) eines Kunden herunterladen und an Claude zum Lesen übergeben |
+| `cockpit_get_document` | Datei-Inhalt (PDF/Office) als Text zum Lesen/Zusammenfassen; Bilder als Bild |
+| `cockpit_get_document_file` | Datei als Base64 (filename/contentType/size/base64) – z. B. als E-Mail-Anhang |
 
 ## Beispiele (in Claude Desktop)
 - „Such mir alle Mails zu Hofer und zeig die offenen Aufgaben dazu."
