@@ -152,28 +152,27 @@ const MAX_DOC_BYTES = 12 * 1024 * 1024
 
 server.tool(
   'cockpit_get_document',
-  'Lädt eine im Cockpit hinterlegte Datei (PDF, Bild, …) anhand ihrer Dokument-ID herunter und übergibt sie Claude zum Lesen – z. B. ein PDF-Datenblatt oder Angebot. Die ID stammt aus cockpit_company (Feld documents[].id).',
+  'Liest den Inhalt einer im Cockpit hinterlegten Datei (PDF, Word, Excel, Text …) anhand ihrer Dokument-ID und gibt ihn Claude zum Lesen & Zusammenfassen zurück – z. B. ein PDF-Datenblatt oder Angebot. Die ID stammt aus cockpit_company (Feld documents[].id).',
   { id: z.number() },
   async ({ id }) => {
-    const { contentType, buf } = await fetchBinary(`/api/documents/${id}/download`)
-    if (buf.length > MAX_DOC_BYTES) {
-      const mb = (n) => (n / 1024 / 1024).toFixed(1)
-      return { content: [{ type: 'text', text: `Datei (#${id}) ist ${mb(buf.length)} MB groß – zu groß, um sie hier einzubetten (Limit ${mb(MAX_DOC_BYTES)} MB).` }] }
+    // 1) Zuerst den per Tika extrahierten Text holen – funktioniert zuverlässig für PDFs/Office-Dokumente.
+    const meta = await api(`/api/documents/${id}/text`)
+    const text = typeof meta?.text === 'string' ? meta.text.trim() : ''
+    const usable = text && !['[leer]', '[nicht verfügbar]', '[fehler]'].includes(text)
+    if (usable) {
+      return { content: [{ type: 'text', text: `# ${meta.name}\n\n${text}` }] }
     }
-    const b64 = buf.toString('base64')
-    if (contentType.startsWith('image/')) {
-      return { content: [{ type: 'image', data: b64, mimeType: contentType }] }
+
+    // 2) Kein extrahierbarer Text? Bei echten Bildern das Bild selbst übergeben (gültiger Media-Type).
+    const ct = String(meta?.contentType || '')
+    if (ct.startsWith('image/')) {
+      const { contentType, buf } = await fetchBinary(`/api/documents/${id}/download`)
+      if (buf.length <= MAX_DOC_BYTES) {
+        return { content: [{ type: 'image', data: buf.toString('base64'), mimeType: contentType }] }
+      }
     }
-    return {
-      content: [{
-        type: 'resource',
-        resource: {
-          uri: `cockpit://documents/${id}`,
-          mimeType: contentType || 'application/pdf',
-          blob: b64,
-        },
-      }],
-    }
+
+    return { content: [{ type: 'text', text: `Dokument #${id} (${meta?.name ?? ''}) enthält keinen extrahierbaren Text – vermutlich ein gescanntes/bildbasiertes PDF. Bitte direkt im Cockpit öffnen.` }] }
   },
 )
 

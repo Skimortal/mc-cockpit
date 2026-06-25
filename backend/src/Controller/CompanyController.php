@@ -175,6 +175,20 @@ class CompanyController extends AbstractController
         return $response;
     }
 
+    /** Liefert den per Tika extrahierten Text eines Dokuments (für MCP/Claude zum Lesen & Zusammenfassen). */
+    #[Route('/api/documents/{id}/text', methods: ['GET'])]
+    public function documentText(Document $doc): JsonResponse
+    {
+        return $this->json([
+            'id' => $doc->id,
+            'name' => $doc->name,
+            'type' => $doc->type,
+            'contentType' => $doc->contentType,
+            'size' => $doc->size,
+            'text' => $doc->extractedText,
+        ]);
+    }
+
     #[Route('/api/documents/{id}/preview', methods: ['GET'])]
     public function previewDocument(Document $doc): Response
     {
