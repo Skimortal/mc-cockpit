@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MOST Connect – LPN-Helfer (Manhattan)
 // @namespace    most-connect.lpn
-// @version      0.21
+// @version      0.22
 // @description  Autopilot für die Manhattan LPN-Erstellung (Login + Navigation + Ausfüllen). Speichert/druckt NICHT.
 // @match        *://*.aldi-sued.com/*
 // @run-at       document-idle
@@ -172,6 +172,13 @@
       if (!partial && t.length < 25 && t.indexOf(po) !== -1) partial = el;
     }
     return partial;
+  }
+  // Status der PO-Zeile lesen (Erstellt/in Arbeit ok; Storniert/Versendet/Abgeschlossen/Teilweise = untypisch).
+  function readPoStatus(cell) {
+    const row = cell.closest('tr, .x-grid-row, [class*="x-grid-row"]');
+    if (!row) return null;
+    const m = txt(row).match(/Teilweise\s+vers\w+|Storniert|Versendet|Abgeschlossen|in Arbeit|Erstellt/i);
+    return m ? m[0] : null;
   }
   // Elemente LINKS der PO-Zelle in derselben Bildschirm-Zeile (für Auswahl-Element / Diagnose).
   function rowLeftElements(cell) {
@@ -377,13 +384,18 @@
     if (sc === 'polist') {
       const job = ctx.job; if (!job) return { screen: sc, acted: true, done: true, status: 'Kein PO-Code geladen' };
       const cell = findPoCell(job.po);
-      if (!cell) return { screen: sc, acted: true, lock: 1500, status: 'PO ' + job.po + ' in der Liste nicht gefunden – sichtbar? sonst filtern/scrollen' };
+      if (!cell) return { screen: sc, acted: true, lock: 1500, status: '⚠️ PO ' + job.po + ' NICHT in der Liste – falsche/alte PO? (sonst filtern/scrollen)' };
       // Schritt 1: Zeile auswählen – zuerst über die Ext-API, sonst Klick-Fallback.
       if (poSelectedFor !== job.po) {
+        const status = readPoStatus(cell);
+        const bad = status && /Storniert|Versendet|Abgeschlossen|Teilweise/i.test(status);
         const ext = extSelectRow(job.po);
         if (!ext.ok) { const t = rowSelectTarget(cell) || cell; richClick(t); }
         poSelectedFor = job.po;
-        return { screen: sc, acted: true, lock: 1000, status: 'PO ' + job.po + ': ' + (ext.ok ? 'ausgewählt (Ext) ✓' : 'Klick-Fallback – ' + ext.why) + ' – nochmal für „Erstelle LPN"' };
+        const sel = ext.ok ? 'ausgewählt (Ext) ✓' : 'Klick-Fallback – ' + ext.why;
+        let msg = 'PO ' + job.po + ': ' + sel + (status ? ' · Status: ' + status : '') + ' – nochmal für „Erstelle LPN"';
+        if (bad) msg = '🛑 PO ' + job.po + ' Status „' + status + '" – untypisch, PRÜFEN! (' + sel + ') – nochmal für „Erstelle LPN"';
+        return { screen: sc, acted: true, lock: 1000, status: msg };
       }
       // Schritt 2: „Erstelle LPN"
       const btn = findByText(/^Erstelle LPN\b/i, 'button,a,span,div,input');
@@ -496,7 +508,7 @@
   const box = document.createElement('div');
   box.id = 'lpnh';
   box.innerHTML = `
-    <div class="hd"><b>🏷️ LPN-Helfer</b><span style="font-size:10px;opacity:.7">v0.21 · Autopilot</span><span class="x" id="lpnh-x">×</span></div>
+    <div class="hd"><b>🏷️ LPN-Helfer</b><span style="font-size:10px;opacity:.7">v0.22 · Autopilot</span><span class="x" id="lpnh-x">×</span></div>
     <div class="bd">
       <details id="lpnh-set"><summary>🔑 Login (lokal gespeichert)</summary>
         <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
@@ -637,7 +649,7 @@
     await new Promise((r) => setTimeout(r, 1300));
     const all = [Object.assign({ where: 'TOP' }, diagFrame())].concat((diagBucket || []).map((d, i) => Object.assign({ where: 'F' + (i + 1) }, d)));
     diagBucket = null;
-    const lines = ['=== LPN-Diagnose v0.21 ===',
+    const lines = ['=== LPN-Diagnose v0.22 ===',
       'Frames injiziert (erwartet): ' + (frames.length + 1) + ' · geantwortet: ' + all.length +
       (all.length < frames.length + 1 ? '  ⚠️ ein Frame ohne Script (kein Antwort)!' : '')];
     for (const f of all) {
