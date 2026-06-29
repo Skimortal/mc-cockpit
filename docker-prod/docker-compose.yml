@@ -82,7 +82,7 @@ services:
     container_name: mc_cockpit_mailsync
     working_dir: /var/www/html
     user: www-data
-    command: sh -c "sleep 15; i=0; while true; do php bin/console app:fetch-mail --since-days=3 --limit=40 >/dev/null 2>&1 || true; php bin/console app:extract-attachments --limit=30 >/dev/null 2>&1 || true; i=$$((i+1)); if [ $$((i % 960)) -eq 1 ]; then php bin/console app:apply-retention >/dev/null 2>&1 || true; fi; sleep 90; done"
+    command: sh -c "sleep 15; i=0; while true; do php bin/console app:fetch-mail --since-days=3 --limit=40 >/dev/null 2>&1 || true; php bin/console app:extract-attachments --limit=30 >/dev/null 2>&1 || true; i=$$((i+1)); if [ $$((i % 960)) -eq 1 ]; then php bin/console app:apply-retention >/dev/null 2>&1 || true; fi; if [ $$((i % 20)) -eq 1 ]; then php bin/console app:task-reminders >/dev/null 2>&1 || true; fi; sleep 90; done"
     volumes:
       - ../backend:/var/www/html
       - cockpit_var:/var/www/html/var

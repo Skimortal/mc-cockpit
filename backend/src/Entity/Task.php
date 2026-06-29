@@ -33,6 +33,10 @@ class Task
     #[ORM\Column(type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $dueDate = null;
 
+    /** Tag der zuletzt verschickten Fälligkeits-Erinnerung (verhindert Mehrfach-Mails am selben Tag). */
+    #[ORM\Column(type: 'date_immutable', nullable: true)]
+    public ?\DateTimeImmutable $dueReminderSentOn = null;
+
     #[ORM\ManyToOne(targetEntity: User::class)]
     public ?User $assignee = null;
 

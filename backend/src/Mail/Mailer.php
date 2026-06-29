@@ -208,6 +208,54 @@ final class Mailer
         $mailer->send($mime);
     }
 
+    /**
+     * Tägliche Sammel-Erinnerung: alle heute fälligen + überfälligen Aufgaben eines Zuständigen in EINER Mail.
+     *
+     * @param list<Task> $tasks
+     */
+    public function sendDueReminder(string $toEmail, string $toName, array $tasks, string $baseUrl): void
+    {
+        $mailbox = $this->pickSmtpMailbox(null);
+        if (!$mailbox) {
+            throw new \RuntimeException('Kein Postfach mit SMTP-Passwort für die Erinnerung verfügbar.');
+        }
+
+        $zone = new \DateTimeZone('Europe/Vienna');
+        $today = new \DateTimeImmutable('today', $zone);
+        $n = \count($tasks);
+        $lines = [
+            'Hallo '.($toName ?: '').',',
+            '',
+            1 === $n ? 'eine Aufgabe ist fällig:' : $n.' Aufgaben sind fällig:',
+            '',
+        ];
+        foreach ($tasks as $t) {
+            $due = $t->dueDate ? \DateTimeImmutable::createFromInterface($t->dueDate)->setTimezone($zone) : null;
+            $mark = ($due && $due < $today) ? '⚠ überfällig seit '.$due->format('d.m.Y') : 'heute fällig';
+            $lines[] = sprintf('• %s  (%s)', $t->title, $mark);
+        }
+        $lines[] = '';
+        $lines[] = 'Im Cockpit öffnen: '.$baseUrl.'/aufgaben';
+        $lines[] = '';
+        $lines[] = '— MOST Connect Cockpit';
+
+        $implicitTls = 'ssl' === $mailbox->smtpEncryption;
+        $transport = new EsmtpTransport($mailbox->smtpHost, $mailbox->smtpPort, $implicitTls);
+        $transport->setUsername($mailbox->username);
+        $transport->setPassword($mailbox->password);
+        $mailer = new SymfonyMailer($transport);
+
+        $subject = 1 === $n ? 'Erinnerung: Aufgabe fällig – '.$tasks[0]->title : 'Erinnerung: '.$n.' Aufgaben fällig';
+
+        $mime = (new MimeEmail())
+            ->from($mailbox->email)
+            ->to($toEmail)
+            ->subject($subject)
+            ->text(implode("\n", $lines));
+
+        $mailer->send($mime);
+    }
+
     private function pickSmtpMailbox(?Mailbox $preferred): ?Mailbox
     {
         if ($preferred && '' !== $preferred->password) {
