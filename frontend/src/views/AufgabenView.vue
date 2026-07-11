@@ -246,13 +246,16 @@ const lpnCompanyId = ref<number | ''>('')
 const lpnSuggestedName = ref<string | null>(null)
 const lpnCreating = ref(false)
 const lpnCopied = ref<string | null>(null)
+// Konversation für den LPN-Assistenten: direkt gewählte Konversation ODER die
+// Konversation hinter einer (aus einer Mail erzeugten) Aufgabe.
+const lpnConvId = computed(() => selConvId.value ?? selTask.value?.conversationId ?? null)
 async function openLpn() {
-  if (!selConvId.value) return
+  if (!lpnConvId.value) return
   lpnOpen.value = true
   lpnBusy.value = true
   lpnMsg.value = ''; lpnPos.value = []; lpnWarning.value = null; lpnCopied.value = null
   try {
-    const { data } = await api.post(`/api/conversations/${selConvId.value}/lpn/prepare`)
+    const { data } = await api.post(`/api/conversations/${lpnConvId.value}/lpn/prepare`)
     lpnPos.value = data.pos || []
     lpnWarning.value = data.warning || (data.actionable === false ? 'Diese Mail enthält keine eindeutigen LPN-Daten (PO + MHD + Paletten).' : null)
     lpnCompanyId.value = data.suggestedCompanyId ?? (detail.value?.suggestedCompanyId ?? '')
@@ -268,11 +271,11 @@ function lpnQtyHint(p: LpnPo): string {
   return `Menge/LPN = Gesamt bestellt ÷ ${p.totalPallets}`
 }
 async function createLpnTasks() {
-  if (!selConvId.value || !lpnPos.value.length || lpnCreating.value) return
+  if (!lpnConvId.value || !lpnPos.value.length || lpnCreating.value) return
   lpnCreating.value = true
   lpnMsg.value = ''
   try {
-    const { data } = await api.post(`/api/conversations/${selConvId.value}/lpn/task`, {
+    const { data } = await api.post(`/api/conversations/${lpnConvId.value}/lpn/task`, {
       pos: lpnPos.value,
       companyId: lpnCompanyId.value === '' ? null : Number(lpnCompanyId.value),
     })
@@ -773,6 +776,9 @@ onBeforeUnmount(() => clearInterval(pollTimer))
               <div class="text-[13px] font-semibold text-ebony">{{ selTask.title }}</div>
               <div v-if="selTask.aiSummary" class="mt-1 p-2 rounded-lg bg-coral/10 text-[12px] text-[#8a3328]"><b>KI:</b> {{ selTask.aiSummary }}</div>
               <div v-if="selTask.description" class="mt-1 text-[12px] text-neutral-600 whitespace-pre-wrap">{{ selTask.description }}</div>
+
+              <!-- LPN aus der zugrunde liegenden Lieferanten-Mail lesen -->
+              <button v-if="selTask.conversationId" @click="openLpn" class="mt-2 w-full py-2 rounded-xl border border-navy/30 text-navy text-[13px] font-medium hover:bg-navy/5 flex items-center justify-center gap-1.5"><Icon name="tag" class="w-3.5 h-3.5" /> LPN vorbereiten</button>
 
               <!-- Status + Priorität (Schnellzustand) -->
               <div class="mt-2 flex items-center gap-1 flex-wrap">
