@@ -17,8 +17,10 @@ final class LpnParser
     }
 
     /**
-     * Liest die LPN-Daten aus den jüngsten eingehenden Nachrichten eines Threads –
-     * PO und MHD/Paletten stehen bei Radenko oft in verschiedenen Mails.
+     * Liest die LPN-Daten aus den jüngsten eingehenden Nachrichten eines Threads.
+     * Radenko schickt entweder EINE Bestellung über mehrere Mails verteilt (PO in
+     * der einen, MHD/Paletten in der anderen) ODER mehrere eigenständige Bestellungen
+     * je in einer eigenen Mail. Beide Fälle liefern jede PO als eigenen Eintrag.
      *
      * @param list<Email> $emails eingehende Mails des Threads, chronologisch (alt → neu)
      *
@@ -127,11 +129,20 @@ final class LpnParser
             Du extrahierst aus den jüngsten Nachrichten eines E-Mail-Threads mit einem Lieferanten
             (oft Radenko Marinković / Mladegs Pak) die Daten zum Erstellen von LPN-Etiketten
             (Manhattan-Lagerportal). Er schreibt meist kurz auf Bosnisch/Serbisch oder Deutsch.
-            PO-Nummer und MHD/Paletten können in VERSCHIEDENEN Nachrichten stehen – kombiniere sie.
-            Gibt es mehrere PO-Nummern, nimm die in der NEUESTEN Nachricht genannte.
+
+            Ein Thread kann MEHRERE Bestellungen enthalten. Gib JEDE eigenständige PO als eigenen
+            Eintrag in „pos" zurück – auch wenn sie in einer älteren Nachricht steht. Verwirf keine
+            frühere Bestellung, nur weil eine neuere existiert.
+            Unterscheide dabei zwei Fälle:
+            - EINE Bestellung über mehrere Mails verteilt: Eine Nachricht nennt die PO, eine andere
+              (ohne PO) die MHD/Paletten dazu → als EINE PO zusammenführen.
+            - MEHRERE eigenständige Bestellungen: Jede Nachricht bringt ihre eigene PO mit ihren
+              eigenen MHD/Paletten → jede als SEPARATE PO ausgeben.
+            Im Zweifel, ob MHD/Paletten ohne eigene PO zur PO einer anderen Nachricht gehören:
+            der zeitlich nächstgelegenen PO zuordnen.
 
             Du brauchst pro Bestellung (PO):
-            - po: die PO-/Bestellnummer. Sie steht im FLIESSTEXT der neuesten Nachricht (lange Zahl,
+            - po: die PO-/Bestellnummer. Sie steht im FLIESSTEXT einer Nachricht (lange Zahl,
               meist ~10 Stellen, oft mit 45… beginnend). NICHT aus dem Betreff nehmen – der ist oft
               eine alte PO aus zitierten Antworten. Gibt der Text keine PO her: po = null.
             - groups: eine oder mehrere MHD-Gruppen. Jede Gruppe hat:
